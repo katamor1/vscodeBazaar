@@ -1,0 +1,617 @@
+{
+  "name": "vscode-bazaar",
+  "displayName": "Bazaar SCM",
+  "description": "Bazaar source control integration for Visual Studio Code.",
+  "version": "0.2.2",
+  "publisher": "local",
+  "license": "UNLICENSED",
+  "engines": {
+    "vscode": "^1.92.0"
+  },
+  "categories": [
+    "SCM Providers"
+  ],
+  "activationEvents": [
+    "workspaceContains:.bzr",
+    "onCommand:bazaar.refresh",
+    "onView:bazaarHistory",
+    "onView:bazaarBranches",
+    "onView:bazaarTags",
+    "onView:bazaarShelves",
+    "onView:bazaarGraph"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "Bazaar",
+      "properties": {
+        "bazaar.cliPath": {
+          "type": "string",
+          "default": "bzr",
+          "description": "Path to the Bazaar command line executable."
+        },
+        "bazaar.history.limit": {
+          "type": "number",
+          "default": 200,
+          "minimum": 1,
+          "description": "Maximum number of Bazaar history revisions to load."
+        },
+        "bazaar.history.includeMerged": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include merged revisions in Bazaar history and graph views."
+        },
+        "bazaar.unknown.expandDirectories": {
+          "type": "boolean",
+          "default": true,
+          "description": "Expand unknown Bazaar directories into file entries in the Source Control view."
+        },
+        "bazaar.autoRefresh.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically refresh Bazaar status after workspace file changes."
+        },
+        "bazaar.autoRefresh.debounceMs": {
+          "type": "number",
+          "default": 750,
+          "minimum": 100,
+          "description": "Debounce time in milliseconds for automatic Bazaar refresh."
+        },
+        "bazaar.blame.enabledFormat": {
+          "type": "string",
+          "default": "revAuthorDate",
+          "enum": [
+            "revAuthorDate",
+            "revAuthor"
+          ],
+          "description": "Line-end format used by Bazaar blame decorations."
+        },
+        "bazaar.history.diffMode": {
+          "type": "string",
+          "default": "editor",
+          "enum": [
+            "editor",
+            "output"
+          ],
+          "description": "Display mode for Bazaar file diffs from history."
+        },
+        "bazaar.dangerousOperations.requireTypedConfirmation": {
+          "type": "boolean",
+          "default": true,
+          "description": "Require exact typed confirmation for destructive Bazaar operations."
+        }
+      }
+    },
+    "views": {
+      "scm": [
+        {
+          "id": "bazaarHistory",
+          "name": "Bazaar History"
+        },
+        {
+          "id": "bazaarBranches",
+          "name": "Bazaar Branches"
+        },
+        {
+          "id": "bazaarTags",
+          "name": "Bazaar Tags"
+        },
+        {
+          "id": "bazaarShelves",
+          "name": "Bazaar Shelves"
+        },
+        {
+          "id": "bazaarGraph",
+          "name": "Bazaar Graph",
+          "type": "webview"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "bazaar.refresh",
+        "title": "Bazaar: Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "bazaar.include",
+        "title": "Bazaar: Include",
+        "icon": "$(add)"
+      },
+      {
+        "command": "bazaar.uninclude",
+        "title": "Bazaar: Uninclude",
+        "icon": "$(remove)"
+      },
+      {
+        "command": "bazaar.includeAll",
+        "title": "Bazaar: Include All",
+        "icon": "$(list-selection)"
+      },
+      {
+        "command": "bazaar.revert",
+        "title": "Bazaar: Revert",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "bazaar.revertAll",
+        "title": "Bazaar: Revert All",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "bazaar.commit",
+        "title": "Bazaar: Commit Included Changes",
+        "icon": "$(check)"
+      },
+      {
+        "command": "bazaar.pull",
+        "title": "Bazaar: Pull",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "bazaar.push",
+        "title": "Bazaar: Push",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "bazaar.resolve",
+        "title": "Bazaar: Resolve Conflict",
+        "icon": "$(check-all)"
+      },
+      {
+        "command": "bazaar.resolveAuto",
+        "title": "Bazaar: Auto Resolve Conflicts"
+      },
+      {
+        "command": "bazaar.conflict.openMerge",
+        "title": "Bazaar: Open Conflict in Merge Editor",
+        "icon": "$(merge)"
+      },
+      {
+        "command": "bazaar.conflict.takeThis",
+        "title": "Bazaar: Resolve Taking This",
+        "icon": "$(arrow-left)"
+      },
+      {
+        "command": "bazaar.conflict.takeOther",
+        "title": "Bazaar: Resolve Taking Other",
+        "icon": "$(arrow-right)"
+      },
+      {
+        "command": "bazaar.conflict.resolveAll",
+        "title": "Bazaar: Resolve All Conflicts"
+      },
+      {
+        "command": "bazaar.cleanTree.preview",
+        "title": "Bazaar: Preview Clean Tree",
+        "icon": "$(preview)"
+      },
+      {
+        "command": "bazaar.cleanTree.run",
+        "title": "Bazaar: Run Clean Tree",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "bazaar.uncommit.preview",
+        "title": "Bazaar: Preview Uncommit",
+        "icon": "$(preview)"
+      },
+      {
+        "command": "bazaar.uncommit.run",
+        "title": "Bazaar: Run Uncommit",
+        "icon": "$(debug-reverse-continue)"
+      },
+      {
+        "command": "bazaar.lock.break",
+        "title": "Bazaar: Break Lock",
+        "icon": "$(unlock)"
+      },
+      {
+        "command": "bazaar.doctor",
+        "title": "Bazaar: Doctor",
+        "icon": "$(tools)"
+      },
+      {
+        "command": "bazaar.openOutput",
+        "title": "Bazaar: Open Output"
+      },
+      {
+        "command": "bazaar.openResourceDiff",
+        "title": "Bazaar: Open Changes"
+      },
+      {
+        "command": "bazaar.history.refresh",
+        "title": "Bazaar: Refresh History",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "bazaar.history.search",
+        "title": "Bazaar: Search History",
+        "icon": "$(search)"
+      },
+      {
+        "command": "bazaar.history.clearFileFilter",
+        "title": "Bazaar: Clear File History Filter",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "bazaar.history.showFileHistory",
+        "title": "Bazaar: Show File History",
+        "icon": "$(history)"
+      },
+      {
+        "command": "bazaar.history.showCommit",
+        "title": "Bazaar: Show Commit"
+      },
+      {
+        "command": "bazaar.history.showCommitDiff",
+        "title": "Bazaar: Show Commit Diff",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "bazaar.history.copyRevisionId",
+        "title": "Bazaar: Copy Revision Id",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "bazaar.history.openFileAtRevision",
+        "title": "Bazaar: Open File at Revision",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "bazaar.blame.toggle",
+        "title": "Bazaar: Toggle Blame",
+        "icon": "$(annotate)"
+      },
+      {
+        "command": "bazaar.blame.showCommit",
+        "title": "Bazaar: Show Blame Commit",
+        "icon": "$(git-commit)"
+      },
+      {
+        "command": "bazaar.blame.showDiff",
+        "title": "Bazaar: Show Blame Diff",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "bazaar.branch.refresh",
+        "title": "Bazaar: Refresh Branches",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "bazaar.branch.create",
+        "title": "Bazaar: Create Branch",
+        "icon": "$(git-branch-create)"
+      },
+      {
+        "command": "bazaar.branch.switch",
+        "title": "Bazaar: Switch Branch",
+        "icon": "$(git-branch)"
+      },
+      {
+        "command": "bazaar.branch.switchForce",
+        "title": "Bazaar: Force Switch Branch"
+      },
+      {
+        "command": "bazaar.branch.remove",
+        "title": "Bazaar: Remove Branch",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "bazaar.branch.removeForce",
+        "title": "Bazaar: Force Remove Branch"
+      },
+      {
+        "command": "bazaar.tag.refresh",
+        "title": "Bazaar: Refresh Tags",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "bazaar.tag.create",
+        "title": "Bazaar: Create Tag",
+        "icon": "$(tag-add)"
+      },
+      {
+        "command": "bazaar.tag.delete",
+        "title": "Bazaar: Delete Tag",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "bazaar.tag.forceMove",
+        "title": "Bazaar: Force Move Tag"
+      },
+      {
+        "command": "bazaar.shelve.refresh",
+        "title": "Bazaar: Refresh Shelves",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "bazaar.shelve.create",
+        "title": "Bazaar: Shelve Selected File",
+        "icon": "$(archive)"
+      },
+      {
+        "command": "bazaar.shelve.createAll",
+        "title": "Bazaar: Shelve All Changes",
+        "icon": "$(archive)"
+      },
+      {
+        "command": "bazaar.shelve.preview",
+        "title": "Bazaar: Preview Shelf",
+        "icon": "$(preview)"
+      },
+      {
+        "command": "bazaar.shelve.apply",
+        "title": "Bazaar: Apply Shelf",
+        "icon": "$(check)"
+      },
+      {
+        "command": "bazaar.shelve.keep",
+        "title": "Bazaar: Apply and Keep Shelf",
+        "icon": "$(pinned)"
+      },
+      {
+        "command": "bazaar.shelve.delete",
+        "title": "Bazaar: Delete Shelf",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "bazaar.graph.open",
+        "title": "Bazaar: Open Graph",
+        "icon": "$(git-merge)"
+      },
+      {
+        "command": "bazaar.graph.refresh",
+        "title": "Bazaar: Refresh Graph",
+        "icon": "$(refresh)"
+      }
+    ],
+    "menus": {
+      "scm/title": [
+        {
+          "command": "bazaar.refresh",
+          "group": "navigation"
+        },
+        {
+          "command": "bazaar.commit",
+          "group": "navigation"
+        },
+        {
+          "command": "bazaar.pull",
+          "group": "2_sync"
+        },
+        {
+          "command": "bazaar.push",
+          "group": "2_sync"
+        },
+        {
+          "command": "bazaar.includeAll",
+          "group": "3_include"
+        },
+        {
+          "command": "bazaar.resolveAuto",
+          "group": "4_conflict"
+        },
+        {
+          "command": "bazaar.conflict.resolveAll",
+          "group": "4_conflict"
+        },
+        {
+          "command": "bazaar.cleanTree.preview",
+          "group": "5_danger"
+        },
+        {
+          "command": "bazaar.uncommit.preview",
+          "group": "5_danger"
+        },
+        {
+          "command": "bazaar.doctor",
+          "group": "8_diagnostics"
+        },
+        {
+          "command": "bazaar.openOutput",
+          "group": "9_output"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "bazaar.history.showFileHistory",
+          "group": "navigation"
+        },
+        {
+          "command": "bazaar.blame.toggle",
+          "group": "navigation"
+        },
+        {
+          "command": "bazaar.blame.showCommit",
+          "group": "navigation"
+        },
+        {
+          "command": "bazaar.blame.showDiff",
+          "group": "navigation"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "bazaar.history.refresh",
+          "when": "view == bazaarHistory",
+          "group": "navigation"
+        },
+        {
+          "command": "bazaar.history.search",
+          "when": "view == bazaarHistory",
+          "group": "navigation"
+        },
+        {
+          "command": "bazaar.history.clearFileFilter",
+          "when": "view == bazaarHistory",
+          "group": "navigation"
+        },
+        {
+          "command": "bazaar.branch.refresh",
+          "when": "view == bazaarBranches",
+          "group": "navigation"
+        },
+        {
+          "command": "bazaar.branch.create",
+          "when": "view == bazaarBranches",
+          "group": "navigation"
+        },
+        {
+          "command": "bazaar.tag.refresh",
+          "when": "view == bazaarTags",
+          "group": "navigation"
+        },
+        {
+          "command": "bazaar.tag.create",
+          "when": "view == bazaarTags",
+          "group": "navigation"
+        },
+        {
+          "command": "bazaar.shelve.refresh",
+          "when": "view == bazaarShelves",
+          "group": "navigation"
+        },
+        {
+          "command": "bazaar.shelve.createAll",
+          "when": "view == bazaarShelves",
+          "group": "navigation"
+        },
+        {
+          "command": "bazaar.graph.refresh",
+          "when": "view == bazaarGraph",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "bazaar.history.showCommitDiff",
+          "when": "view == bazaarHistory && viewItem == bazaarRevision",
+          "group": "inline"
+        },
+        {
+          "command": "bazaar.history.copyRevisionId",
+          "when": "view == bazaarHistory && viewItem == bazaarRevision",
+          "group": "inline"
+        },
+        {
+          "command": "bazaar.branch.switch",
+          "when": "view == bazaarBranches && viewItem == bazaarBranch",
+          "group": "inline"
+        },
+        {
+          "command": "bazaar.branch.switchForce",
+          "when": "view == bazaarBranches && viewItem == bazaarBranch",
+          "group": "navigation"
+        },
+        {
+          "command": "bazaar.branch.remove",
+          "when": "view == bazaarBranches && viewItem == bazaarBranch",
+          "group": "navigation"
+        },
+        {
+          "command": "bazaar.branch.removeForce",
+          "when": "view == bazaarBranches && viewItem == bazaarBranch",
+          "group": "navigation"
+        },
+        {
+          "command": "bazaar.tag.forceMove",
+          "when": "view == bazaarTags && viewItem == bazaarTag",
+          "group": "inline"
+        },
+        {
+          "command": "bazaar.tag.delete",
+          "when": "view == bazaarTags && viewItem == bazaarTag",
+          "group": "navigation"
+        },
+        {
+          "command": "bazaar.shelve.preview",
+          "when": "view == bazaarShelves && viewItem == bazaarShelf",
+          "group": "inline"
+        },
+        {
+          "command": "bazaar.shelve.apply",
+          "when": "view == bazaarShelves && viewItem == bazaarShelf",
+          "group": "navigation"
+        },
+        {
+          "command": "bazaar.shelve.keep",
+          "when": "view == bazaarShelves && viewItem == bazaarShelf",
+          "group": "navigation"
+        },
+        {
+          "command": "bazaar.shelve.delete",
+          "when": "view == bazaarShelves && viewItem == bazaarShelf",
+          "group": "navigation"
+        }
+      ],
+      "scm/resourceGroup/context": [
+        {
+          "command": "bazaar.includeAll",
+          "when": "scmProvider == bazaar && scmResourceGroup != included",
+          "group": "inline"
+        }
+      ],
+      "scm/resourceState/context": [
+        {
+          "command": "bazaar.include",
+          "when": "scmProvider == bazaar && scmResourceGroup != included && scmResourceGroup != conflicts",
+          "group": "inline"
+        },
+        {
+          "command": "bazaar.uninclude",
+          "when": "scmProvider == bazaar && scmResourceGroup == included",
+          "group": "inline"
+        },
+        {
+          "command": "bazaar.resolve",
+          "when": "scmProvider == bazaar && scmResourceGroup == conflicts",
+          "group": "inline"
+        },
+        {
+          "command": "bazaar.conflict.openMerge",
+          "when": "scmProvider == bazaar && scmResourceGroup == conflicts",
+          "group": "inline"
+        },
+        {
+          "command": "bazaar.conflict.takeThis",
+          "when": "scmProvider == bazaar && scmResourceGroup == conflicts",
+          "group": "navigation"
+        },
+        {
+          "command": "bazaar.conflict.takeOther",
+          "when": "scmProvider == bazaar && scmResourceGroup == conflicts",
+          "group": "navigation"
+        },
+        {
+          "command": "bazaar.revert",
+          "when": "scmProvider == bazaar && scmResourceGroup != conflicts && scmResourceGroup != untracked",
+          "group": "navigation"
+        },
+        {
+          "command": "bazaar.shelve.create",
+          "when": "scmProvider == bazaar && scmResourceGroup != conflicts && scmResourceGroup != untracked",
+          "group": "navigation"
+        },
+        {
+          "command": "bazaar.openResourceDiff",
+          "when": "scmProvider == bazaar",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "watch": "tsc -watch -p .",
+    "test": "vitest run",
+    "package": "npm run compile && vsce package --no-dependencies --allow-missing-repository"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.17",
+    "@types/vscode": "^1.92.0",
+    "@vscode/vsce": "^3.4.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.3"
+  }
+}
