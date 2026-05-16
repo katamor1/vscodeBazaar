@@ -74,7 +74,8 @@ export class BazaarScmProvider implements vscode.Disposable {
     private readonly client: BazaarClient,
     private readonly originalProvider: BazaarOriginalDocumentProvider,
     private readonly generatedProvider: BazaarGeneratedDocumentProvider,
-    private readonly output: vscode.OutputChannel
+    private readonly output: vscode.OutputChannel,
+    private readonly afterCommit?: () => Promise<void> | void
   ) {
     const rootUri = vscode.Uri.file(rootPath);
     this.sourceControl = vscode.scm.createSourceControl('bazaar', 'Bazaar', rootUri);
@@ -266,6 +267,7 @@ export class BazaarScmProvider implements vscode.Disposable {
       this.sourceControl.inputBox.value = '';
       this.includedSet.clear();
       await this.refresh();
+      await this.afterCommit?.();
     });
   }
 

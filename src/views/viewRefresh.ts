@@ -10,10 +10,17 @@ export interface BazaarRefreshableView {
 export interface BranchSwitchRefreshViews {
   sourceControl: BazaarRefreshableView;
   blame: BazaarRefreshableView;
+  explore: BazaarRefreshableView;
   history: BazaarRefreshableView;
   branches: BazaarRefreshableView;
   tags: BazaarRefreshableView;
   shelves: BazaarRefreshableView;
+  graph: BazaarRefreshableView;
+}
+
+export interface CommitRefreshViews {
+  explore: BazaarRefreshableView;
+  history: BazaarRefreshableView;
   graph: BazaarRefreshableView;
 }
 
@@ -26,10 +33,19 @@ export function createBranchSwitchRefreshTargets(views: BranchSwitchRefreshViews
   return [
     { label: 'ソース管理', refresh: () => views.sourceControl.refresh() },
     { label: 'blame', refresh: () => views.blame.refresh() },
+    { label: 'EXPLORE', refresh: () => views.explore.refresh() },
     { label: '履歴', refresh: () => views.history.refresh() },
     { label: 'ブランチ', refresh: () => views.branches.refresh() },
     { label: 'タグ', refresh: () => views.tags.refresh() },
     { label: 'シェルブ', refresh: () => views.shelves.refresh() },
+    { label: 'グラフ', refresh: () => views.graph.refresh() }
+  ];
+}
+
+export function createCommitRefreshTargets(views: CommitRefreshViews): BazaarViewRefreshTarget[] {
+  return [
+    { label: 'EXPLORE', refresh: () => views.explore.refresh() },
+    { label: '履歴', refresh: () => views.history.refresh() },
     { label: 'グラフ', refresh: () => views.graph.refresh() }
   ];
 }

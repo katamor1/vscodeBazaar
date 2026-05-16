@@ -2,7 +2,7 @@
   "name": "vscode-bazaar",
   "displayName": "Bazaar SCM",
   "description": "Visual Studio Code で Bazaar の状態、履歴、グラフ、blame、ブランチ、タグ、シェルブ、競合、差分を扱う SCM 拡張です。",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "publisher": "local",
   "license": "UNLICENSED",
   "engines": {
@@ -14,6 +14,7 @@
   "activationEvents": [
     "workspaceContains:.bzr",
     "onCommand:bazaar.refresh",
+    "onView:bazaarExplore",
     "onView:bazaarHistory",
     "onView:bazaarBranches",
     "onView:bazaarTags",
@@ -76,6 +77,11 @@
     "views": {
       "scm": [
         {
+          "id": "bazaarExplore",
+          "name": "BAZAAR EXPLORE",
+          "type": "webview"
+        },
+        {
           "id": "bazaarHistory",
           "name": "Bazaar 履歴"
         },
@@ -102,6 +108,16 @@
       {
         "command": "bazaar.refresh",
         "title": "Bazaar: 更新",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "bazaar.explore.open",
+        "title": "Bazaar: BAZAAR EXPLORE を開く",
+        "icon": "$(compass)"
+      },
+      {
+        "command": "bazaar.explore.refresh",
+        "title": "Bazaar: BAZAAR EXPLORE を更新",
         "icon": "$(refresh)"
       },
       {
@@ -547,6 +563,11 @@
         }
       ],
       "view/title": [
+        {
+          "command": "bazaar.explore.refresh",
+          "when": "view == bazaarExplore",
+          "group": "navigation"
+        },
         {
           "command": "bazaar.history.refresh",
           "when": "view == bazaarHistory",

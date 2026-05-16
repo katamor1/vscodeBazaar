@@ -8,7 +8,8 @@ Bazaar の作業ツリーを VS Code のソース管理ビューから扱うた�
 - 疑似ステージング機能により、先にファイルをコミット対象へ入れ、明示的な Bazaar ファイルリストでコミットします。
 - 未追跡ディレクトリを展開し、生成されたフォルダツリーもファイル単位で確認・追加できます。
 - 作業ツリー差分、履歴差分、blame のコンテキスト操作を VS Code の差分エディターで開きます。
-- ソース管理ビュー配下に履歴、ブランチ、タグ、シェルブ、グラフの各ビューを追加します。
+- ソース管理ビュー配下に `BAZAAR EXPLORE`、履歴、ブランチ、タグ、シェルブ、グラフの各ビューを追加します。
+- `BAZAAR EXPLORE` は、状態、競合、直近履歴グラフ、ブランチ、シェルブ、タグ、Bazaar info を 1 つの GUI で視覚確認できます。
 - ファイル履歴、履歴検索、コミット詳細、変更パス、リビジョン ID のコピー、指定リビジョンのファイル表示に対応します。
 - カーソル行または選択範囲の blame 注釈を表示し、ホバーで詳細を確認できます。
 - GitLens 風の blame コンテキスト操作として、前リビジョン、作業中ファイル、任意リビジョン、ブランチ、タグとの差分を開けます。
@@ -29,6 +30,8 @@ Bazaar CLI をインストールし、`bzr` として実行できるようにし
 主なコマンド:
 
 - `Bazaar: 更新`
+- `Bazaar: BAZAAR EXPLORE を開く`
+- `Bazaar: BAZAAR EXPLORE を更新`
 - `Bazaar: コミット対象の変更をコミット`
 - `Bazaar: Pull`
 - `Bazaar: Push`
@@ -61,8 +64,8 @@ Bazaar CLI をインストールし、`bzr` として実行できるようにし
 ## 設定
 
 - `bazaar.cliPath`: Bazaar コマンドライン実行ファイルのパス。
-- `bazaar.history.limit`: 履歴ビューとグラフビューで読み込む最大リビジョン数。
-- `bazaar.history.includeMerged`: 履歴ビューとグラフビューにマージ済みリビジョンを含めるか。
+- `bazaar.history.limit`: 履歴ビュー、グラフビュー、`BAZAAR EXPLORE` で読み込む最大リビジョン数。
+- `bazaar.history.includeMerged`: 履歴ビュー、グラフビュー、`BAZAAR EXPLORE` にマージ済みリビジョンを含めるか。
 - `bazaar.unknown.expandDirectories`: 未追跡ディレクトリをソース管理ビューでファイル単位に展開するか。
 - `bazaar.autoRefresh.enabled`: ワークスペース内のファイル変更後に Bazaar 状態を自動更新するか。
 - `bazaar.autoRefresh.debounceMs`: 自動更新のデバウンス時間。
@@ -94,6 +97,7 @@ npm run package
 - Bazaar 本体が常に真実の情報源です。ローカルの `.bzr` メタデータが壊れている場合、この拡張は安全に劣化しますが Bazaar ツリーの修復は行いません。
 - 拡張は、開いているワークスペース内の 1 つの Bazaar ルートを対象にします。
 - `コミット対象` は拡張内のローカル状態であり、Bazaar のステージング領域ではありません。
+- `BAZAAR EXPLORE` の履歴グラフは視覚確認用に直近リビジョンを最大 40 件まで表示します。完全な履歴確認には履歴ビューまたはグラフビューを使います。
 - ブランチ検出は Bazaar メタデータ、現在の checkout の兄弟フォルダ、この拡張で作成したブランチルートを確認します。`Bazaar: ブランチを作成` は現在のワークスペース内に子フォルダを作らず、`Bazaar: ブランチを切り替え、または作業ツリーを開く` は別の作業ツリーブランチを検出した場合に VS Code ウィンドウをその場所へ移動し、lightweight checkout の切替先では `bzr switch` にフォールバックします。
 - 行差分コマンドはファイル差分を開いて blame 対象行付近を表示します。行だけの専用差分 UI は実装していません。
 - 統合テストは現在、拡張の起動とコマンド登録を確認しており、完全な UI クリック操作までは網羅していません。
@@ -120,7 +124,7 @@ npm audit --omit=dev
 npm run package
 ```
 
-このローカル VSIX リリースラインでは、`npm run package` により `vscode-bazaar-0.2.8.vsix` が生成されます。
+このローカル VSIX リリースラインでは、`npm run package` により `vscode-bazaar-0.2.9.vsix` が生成されます。
 
 ## 補足
 

@@ -10,12 +10,14 @@ import { BazaarOriginalDocumentProvider } from './scm/originalDocumentProvider';
 import { BazaarRevisionDocumentProvider } from './scm/revisionDocumentProvider';
 import { BazaarBlameController } from './views/blameController';
 import { BazaarBranchView } from './views/branchView';
+import { BazaarExploreView } from './views/exploreView';
 import { BazaarGraphView } from './views/graphView';
 import { BazaarHistoryView } from './views/historyView';
 import { BazaarShelveView } from './views/shelveView';
 import { BazaarTagView } from './views/tagView';
 import {
   createBranchSwitchRefreshTargets,
+  createCommitRefreshTargets,
   formatViewRefreshFailure,
   refreshBazaarViewTargets
 } from './views/viewRefresh';
@@ -44,17 +46,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const originalProvider = new BazaarOriginalDocumentProvider(rootPath, client, output);
   const revisionProvider = new BazaarRevisionDocumentProvider(client, output);
   const generatedProvider = new BazaarGeneratedDocumentProvider();
-  const provider = new BazaarScmProvider(rootPath, client, originalProvider, generatedProvider, output);
+  const exploreView = new BazaarExploreView(rootPath, client, output);
   const historyView = new BazaarHistoryView(rootPath, client, revisionProvider, generatedProvider, output);
   const tagView = new BazaarTagView(client);
   const graphView = new BazaarGraphView(rootPath, client, output);
   const shelveView = new BazaarShelveView(rootPath, client, generatedProvider, output);
   const blameController = new BazaarBlameController(rootPath, client, revisionProvider, generatedProvider, output);
+  const refreshAfterCommit = async () => {
+    const failures = await refreshBazaarViewTargets(createCommitRefreshTargets({
+      explore: exploreView,
+      history: historyView,
+      graph: graphView
+    }));
+
+    for (const failure of failures) {
+      output.appendLine(`コミット後の Bazaar 更新に失敗しました: ${formatViewRefreshFailure(failure)}`);
+    }
+    if (failures.length > 0) {
+      vscode.window.showWarningMessage('Bazaar コミットは完了しましたが、一部の履歴ビューを更新できませんでした。詳細は Bazaar 出力を確認してください。');
+    }
+  };
+  const provider = new BazaarScmProvider(rootPath, client, originalProvider, generatedProvider, output, refreshAfterCommit);
   let branchView: BazaarBranchView;
   const refreshAfterBranchSwitch = async () => {
     const failures = await refreshBazaarViewTargets(createBranchSwitchRefreshTargets({
       sourceControl: provider,
       blame: blameController,
+      explore: exploreView,
       history: historyView,
       branches: branchView,
       tags: tagView,
@@ -76,6 +94,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     originalProvider,
     revisionProvider,
     generatedProvider,
+    exploreView,
     historyView,
     branchView,
     tagView,
@@ -85,12 +104,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.workspace.registerTextDocumentContentProvider(BazaarOriginalDocumentProvider.scheme, originalProvider),
     vscode.workspace.registerTextDocumentContentProvider(BazaarRevisionDocumentProvider.scheme, revisionProvider),
     vscode.workspace.registerTextDocumentContentProvider(BazaarGeneratedDocumentProvider.scheme, generatedProvider),
+    vscode.window.registerWebviewViewProvider('bazaarExplore', exploreView, { webviewOptions: { retainContextWhenHidden: true } }),
     vscode.window.registerTreeDataProvider('bazaarHistory', historyView),
     vscode.window.registerTreeDataProvider('bazaarBranches', branchView),
     vscode.window.registerTreeDataProvider('bazaarTags', tagView),
     vscode.window.registerTreeDataProvider('bazaarShelves', shelveView),
     vscode.window.registerWebviewViewProvider('bazaarGraph', graphView, { webviewOptions: { retainContextWhenHidden: true } }),
     vscode.languages.registerHoverProvider({ scheme: 'file' }, blameController),
+    vscode.commands.registerCommand('bazaar.explore.open', () => exploreView.open()),
+    vscode.commands.registerCommand('bazaar.explore.refresh', () => runCommand(output, 'EXPLORE 更新', () => exploreView.refresh())),
     vscode.commands.registerCommand('bazaar.history.refresh', () => runCommand(output, '履歴更新', () => historyView.refresh())),
     vscode.commands.registerCommand('bazaar.history.search', () => runCommand(output, '履歴検索', () => historyView.search())),
     vscode.commands.registerCommand('bazaar.history.clearFileFilter', () => runCommand(output, 'ファイル履歴フィルターのクリア', () => historyView.clearFileFilter())),
@@ -137,6 +159,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerAutoRefresh(context, rootPath, output, async () => {
     await provider.refresh();
     await blameController.refresh();
+    await exploreView.refresh();
   });
 
   await provider.refresh();

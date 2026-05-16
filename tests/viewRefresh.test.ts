@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   createBranchSwitchRefreshTargets,
+  createCommitRefreshTargets,
   refreshBazaarViewTargets,
   formatViewRefreshFailure
 } from '../src/views/viewRefresh';
@@ -51,6 +52,7 @@ describe('createBranchSwitchRefreshTargets', () => {
     const targets = createBranchSwitchRefreshTargets({
       sourceControl: refreshable('ソース管理'),
       blame: refreshable('blame'),
+      explore: refreshable('EXPLORE'),
       history: refreshable('履歴'),
       branches: refreshable('ブランチ'),
       tags: refreshable('タグ'),
@@ -61,6 +63,7 @@ describe('createBranchSwitchRefreshTargets', () => {
     expect(targets.map((target) => target.label)).toEqual([
       'ソース管理',
       'blame',
+      'EXPLORE',
       '履歴',
       'ブランチ',
       'タグ',
@@ -72,10 +75,38 @@ describe('createBranchSwitchRefreshTargets', () => {
     expect(calls).toEqual([
       'ソース管理',
       'blame',
+      'EXPLORE',
       '履歴',
       'ブランチ',
       'タグ',
       'シェルブ',
+      'グラフ'
+    ]);
+  });
+});
+
+describe('createCommitRefreshTargets', () => {
+  it('refreshes history-backed views after a successful commit', async () => {
+    const calls: string[] = [];
+    const refreshable = (label: string) => ({
+      refresh: () => calls.push(label)
+    });
+    const targets = createCommitRefreshTargets({
+      explore: refreshable('EXPLORE'),
+      history: refreshable('履歴'),
+      graph: refreshable('グラフ')
+    });
+
+    expect(targets.map((target) => target.label)).toEqual([
+      'EXPLORE',
+      '履歴',
+      'グラフ'
+    ]);
+
+    await refreshBazaarViewTargets(targets);
+    expect(calls).toEqual([
+      'EXPLORE',
+      '履歴',
       'グラフ'
     ]);
   });

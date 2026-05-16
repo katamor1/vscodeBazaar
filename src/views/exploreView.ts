@@ -1,0 +1,617 @@
+import * as vscode from 'vscode';
+import { buildGraph } from '../bazaar/graphModel';
+import { normalizeRevisionSpec, revisionGraphId } from '../bazaar/revisionSpec';
+import type { BazaarClient } from '../bazaar/client';
+import type { BazaarRevision } from '../bazaar/types';
+import { expandUnknownDirectories } from '../bazaar/unknownExpansion';
+import {
+  createBazaarExploreModel,
+  createEmptyBazaarExploreSnapshot,
+  type BazaarExploreLoadError,
+  type BazaarExploreModel,
+  type BazaarExploreSnapshot
+} from './exploreSnapshot';
+import { loadBazaarRevisionsWithFallback } from './historyFallback';
+
+type ExploreMessage =
+  | { command: 'refresh' }
+  | { command: 'openOutput' }
+  | { command: 'showCommit'; revisionId?: unknown }
+  | { command: 'showDiff'; revisionId?: unknown; path?: unknown };
+
+interface ExploreLoadResult<T> {
+  value: T;
+  error?: BazaarExploreLoadError;
+}
+
+const maxExploreRevisions = 40;
+
+export class BazaarExploreView implements vscode.WebviewViewProvider, vscode.Disposable {
+  private view: vscode.WebviewView | undefined;
+  private snapshot: BazaarExploreSnapshot;
+
+  constructor(
+    private readonly rootPath: string,
+    private readonly client: BazaarClient,
+    private readonly output?: vscode.OutputChannel
+  ) {
+    this.snapshot = createEmptyBazaarExploreSnapshot(rootPath);
+  }
+
+  resolveWebviewView(webviewView: vscode.WebviewView): void {
+    this.view = webviewView;
+    webviewView.webview.options = { enableScripts: true };
+    webviewView.webview.onDidReceiveMessage((message: ExploreMessage) => {
+      void this.handleMessage(message);
+    });
+    this.render();
+    if (!this.snapshot.loadedAt) {
+      void this.refresh();
+    }
+  }
+
+  async refresh(): Promise<void> {
+    const config = vscode.workspace.getConfiguration('bazaar');
+    const historyLimit = Math.min(config.get<number>('history.limit', 200), maxExploreRevisions);
+    const includeMerged = config.get<boolean>('history.includeMerged', true);
+    const expandUnknowns = config.get<boolean>('unknown.expandDirectories', true);
+
+    const [
+      changes,
+      conflicts,
+      branches,
+      tags,
+      shelves,
+      revisions,
+      info
+    ] = await Promise.all([
+      this.loadPart('status', [], async () => {
+        const rawChanges = await this.client.status();
+        return expandUnknowns ? expandUnknownDirectories(this.rootPath, rawChanges) : rawChanges;
+      }),
+      this.loadPart('conflicts', [], () => this.client.conflicts()),
+      this.loadPart('branches', [], () => this.client.branches()),
+      this.loadPart('tags', [], () => this.client.tags()),
+      this.loadPart('shelves', [], () => this.client.shelves()),
+      this.loadPart('history', [], () => loadBazaarRevisionsWithFallback(
+        this.rootPath,
+        this.client,
+        {
+          limit: historyLimit,
+          includeMerged
+        },
+        this.output
+      )),
+      this.loadPart('info', {}, () => this.client.info())
+    ]);
+
+    const errors = [changes, conflicts, branches, tags, shelves, revisions, info]
+      .flatMap((result) => result.error ? [result.error] : []);
+    this.snapshot = {
+      rootPath: this.rootPath,
+      loadedAt: new Date().toISOString(),
+      changes: changes.value,
+      conflicts: conflicts.value,
+      branches: branches.value,
+      tags: tags.value,
+      shelves: shelves.value,
+      revisions: revisions.value,
+      graph: buildGraph(revisions.value),
+      info: info.value,
+      errors
+    };
+    this.render();
+  }
+
+  open(): void {
+    void vscode.commands.executeCommand('workbench.view.scm')
+      .then(() => vscode.commands.executeCommand('bazaarExplore.focus'))
+      .then(undefined, () => undefined);
+  }
+
+  dispose(): void {
+    this.view = undefined;
+  }
+
+  private async handleMessage(message: ExploreMessage): Promise<void> {
+    try {
+      if (message.command === 'refresh') {
+        await this.refresh();
+        return;
+      }
+      if (message.command === 'openOutput') {
+        await vscode.commands.executeCommand('bazaar.openOutput');
+        return;
+      }
+
+      const revision = this.revisionForMessage(message.revisionId);
+      if (!revision) {
+        return;
+      }
+      if (message.command === 'showCommit') {
+        await vscode.commands.executeCommand('bazaar.history.showCommit', revision);
+      } else if (message.command === 'showDiff') {
+        await vscode.commands.executeCommand('bazaar.history.showCommitDiff', revision, this.changedPathForMessage(revision, message.path));
+      }
+    } catch (error) {
+      this.output?.appendLine(`BAZAAR EXPLORE の操作に失敗しました: ${formatError(error)}`);
+    }
+  }
+
+  private revisionForMessage(value: unknown): BazaarRevision | undefined {
+    const graphId = normalizeRevisionSpec(value);
+    if (!graphId) {
+      return undefined;
+    }
+    return this.snapshot.revisions.find((revision) => revisionGraphId(revision) === graphId);
+  }
+
+  private changedPathForMessage(revision: BazaarRevision, value: unknown): string | undefined {
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+    return revision.changedPaths?.includes(value) ? value : undefined;
+  }
+
+  private async loadPart<T>(source: string, fallback: T, task: () => Promise<T>): Promise<ExploreLoadResult<T>> {
+    try {
+      return { value: await task() };
+    } catch (error) {
+      const loadError = { source, message: formatError(error) };
+      this.output?.appendLine(`BAZAAR EXPLORE が ${source} を読み込めませんでした: ${loadError.message}`);
+      return { value: fallback, error: loadError };
+    }
+  }
+
+  private render(): void {
+    if (!this.view) {
+      return;
+    }
+    this.view.webview.html = renderExploreHtml(createBazaarExploreModel(this.snapshot));
+  }
+}
+
+function renderExploreHtml(model: BazaarExploreModel): string {
+  const modelJson = JSON.stringify(model).replace(/</g, '\\u003c');
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    :root {
+      color-scheme: var(--vscode-color-scheme);
+    }
+    body {
+      margin: 0;
+      padding: 0;
+      color: var(--vscode-foreground);
+      background: var(--vscode-sideBar-background);
+      font-family: var(--vscode-font-family);
+      font-size: var(--vscode-font-size);
+    }
+    button {
+      font: inherit;
+      cursor: pointer;
+    }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 10px 12px 8px;
+      background: var(--vscode-sideBar-background);
+      border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border, var(--vscode-panel-border));
+    }
+    h1 {
+      margin: 0;
+      font-size: 13px;
+      line-height: 18px;
+      letter-spacing: 0;
+      font-weight: 700;
+    }
+    h2 {
+      margin: 0 0 8px;
+      font-size: 12px;
+      line-height: 16px;
+      letter-spacing: 0;
+      color: var(--vscode-sideBarTitle-foreground, var(--vscode-foreground));
+      text-transform: uppercase;
+    }
+    .root {
+      overflow: hidden;
+      color: var(--vscode-descriptionForeground);
+      font-size: 11px;
+      line-height: 15px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 100%;
+    }
+    .actions {
+      display: flex;
+      gap: 6px;
+      flex: 0 0 auto;
+    }
+    .action {
+      min-width: 32px;
+      min-height: 26px;
+      border: 1px solid var(--vscode-button-border, transparent);
+      color: var(--vscode-button-foreground);
+      background: var(--vscode-button-background);
+      border-radius: 3px;
+      padding: 3px 8px;
+    }
+    .action.secondary {
+      color: var(--vscode-button-secondaryForeground);
+      background: var(--vscode-button-secondaryBackground);
+    }
+    .content {
+      padding: 10px 12px 14px;
+    }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+    .metric {
+      min-width: 0;
+      border: 1px solid var(--vscode-panel-border);
+      border-left: 3px solid var(--vscode-charts-blue);
+      padding: 7px 8px;
+      background: var(--vscode-editorWidget-background);
+    }
+    .metric.clean {
+      border-left-color: var(--vscode-charts-green);
+    }
+    .metric.dirty {
+      border-left-color: var(--vscode-charts-yellow);
+    }
+    .metric.conflict {
+      border-left-color: var(--vscode-charts-red);
+    }
+    .metric.partial {
+      border-left-color: var(--vscode-charts-orange);
+    }
+    .metric-value {
+      overflow: hidden;
+      font-size: 16px;
+      line-height: 20px;
+      font-weight: 700;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .metric-label {
+      overflow: hidden;
+      color: var(--vscode-descriptionForeground);
+      font-size: 11px;
+      line-height: 15px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .section {
+      padding: 10px 0;
+      border-top: 1px solid var(--vscode-panel-border);
+    }
+    .status-group {
+      margin-bottom: 8px;
+    }
+    .status-heading {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 4px;
+      color: var(--vscode-descriptionForeground);
+      font-size: 11px;
+      line-height: 15px;
+    }
+    .row {
+      min-width: 0;
+      padding: 4px 0;
+      border-top: 1px solid color-mix(in srgb, var(--vscode-panel-border) 70%, transparent);
+    }
+    .primary {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .secondary {
+      overflow: hidden;
+      color: var(--vscode-descriptionForeground);
+      font-size: 11px;
+      line-height: 15px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .graph-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--vscode-panel-border);
+      background: var(--vscode-editor-background);
+    }
+    svg {
+      display: block;
+      min-width: 100%;
+    }
+    text {
+      font-size: 11px;
+      dominant-baseline: middle;
+    }
+    .node {
+      cursor: pointer;
+    }
+    .node circle {
+      fill: var(--vscode-charts-blue);
+    }
+    .node.selected circle {
+      fill: var(--vscode-charts-orange);
+    }
+    .revision-actions,
+    .file-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-top: 8px;
+    }
+    .file-button,
+    .revision-button {
+      width: 100%;
+      min-height: 24px;
+      overflow: hidden;
+      border: 0;
+      color: var(--vscode-button-secondaryForeground);
+      background: var(--vscode-button-secondaryBackground);
+      border-radius: 3px;
+      padding: 3px 6px;
+      text-align: left;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .empty {
+      color: var(--vscode-descriptionForeground);
+      font-size: 12px;
+      line-height: 18px;
+    }
+    .errors {
+      border-left: 3px solid var(--vscode-charts-orange);
+      padding-left: 8px;
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>BAZAAR EXPLORE</h1>
+      <div class="root" title="${escapeHtml(model.rootPath)}">${escapeHtml(model.rootPath)}</div>
+    </div>
+    <div class="actions">
+      <button class="action" id="refresh" title="更新" aria-label="更新">更新</button>
+      <button class="action secondary" id="output" title="出力" aria-label="出力">出力</button>
+    </div>
+  </header>
+  <main class="content">
+    ${renderSummary(model)}
+    ${renderErrors(model)}
+    <section class="section">
+      <h2>Status</h2>
+      ${renderStatus(model)}
+    </section>
+    <section class="section">
+      <h2>Graph</h2>
+      ${renderGraph(model)}
+      <div id="revision-detail" class="revision-detail"></div>
+    </section>
+    <section class="section">
+      <h2>Branches</h2>
+      ${renderBranches(model)}
+    </section>
+    <section class="section">
+      <h2>Shelves / Tags</h2>
+      ${renderShelvesAndTags(model)}
+    </section>
+    <section class="section">
+      <h2>Info</h2>
+      ${renderInfo(model)}
+    </section>
+  </main>
+  <script>
+    const vscode = acquireVsCodeApi();
+    const model = ${modelJson};
+    const revisions = new Map(model.revisions.map((revision) => [revision.graphId, revision]));
+    let selectedRevisionId = model.revisions[0]?.graphId;
+
+    document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ command: 'refresh' }));
+    document.getElementById('output').addEventListener('click', () => vscode.postMessage({ command: 'openOutput' }));
+
+    document.querySelectorAll('[data-revision-id]').forEach((element) => {
+      element.addEventListener('click', () => {
+        selectedRevisionId = element.dataset.revisionId;
+        document.querySelectorAll('[data-revision-id]').forEach((item) => {
+          item.classList.toggle('selected', item.dataset.revisionId === selectedRevisionId);
+        });
+        renderRevisionDetail(revisions.get(selectedRevisionId));
+      });
+    });
+
+    renderRevisionDetail(revisions.get(selectedRevisionId));
+    const initial = document.querySelector('[data-revision-id="' + cssEscape(selectedRevisionId || '') + '"]');
+    if (initial) {
+      initial.classList.add('selected');
+    }
+
+    function renderRevisionDetail(revision) {
+      const container = document.getElementById('revision-detail');
+      if (!revision) {
+        container.innerHTML = '<div class="empty">履歴が読み込まれていません。</div>';
+        return;
+      }
+      const tags = revision.tags.length ? revision.tags.map((tag) => '#' + escapeHtml(tag)).join(' ') : '';
+      const parents = revision.parentIds.length ? revision.parentIds.map(escapeHtml).join('<br>') : '(なし)';
+      const files = revision.changedPaths.length
+        ? revision.changedPaths.map((file) => '<button class="file-button" data-path="' + escapeHtml(file) + '">' + escapeHtml(file) + '</button>').join('')
+        : '<div class="empty">変更パスはログに含まれていません。</div>';
+      container.innerHTML =
+        '<div class="row">' +
+          '<div class="primary">' + escapeHtml(revision.revno + ' ' + revision.summary) + '</div>' +
+          '<div class="secondary">' + escapeHtml(revision.committer) + ' / ' + escapeHtml(revision.timestamp) + '</div>' +
+          '<div class="secondary">' + escapeHtml(revision.branchNick || '') + ' ' + tags + '</div>' +
+          '<div class="secondary">parents<br>' + parents + '</div>' +
+        '</div>' +
+        '<div class="revision-actions">' +
+          '<button class="revision-button" id="show-commit">コミットを表示</button>' +
+          '<button class="revision-button" id="show-diff">コミット差分</button>' +
+        '</div>' +
+        '<div class="file-actions">' + files + '</div>';
+
+      document.getElementById('show-commit').addEventListener('click', () => vscode.postMessage({ command: 'showCommit', revisionId: revision.graphId }));
+      document.getElementById('show-diff').addEventListener('click', () => vscode.postMessage({ command: 'showDiff', revisionId: revision.graphId }));
+      document.querySelectorAll('[data-path]').forEach((button) => {
+        button.addEventListener('click', () => vscode.postMessage({
+          command: 'showDiff',
+          revisionId: revision.graphId,
+          path: button.dataset.path
+        }));
+      });
+    }
+
+    function cssEscape(value) {
+      if (window.CSS && CSS.escape) {
+        return CSS.escape(value);
+      }
+      return String(value).replace(/"/g, '\\\\"');
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+  </script>
+</body>
+</html>`;
+}
+
+function renderSummary(model: BazaarExploreModel): string {
+  return `<section class="summary">
+    <div class="metric ${model.health}">
+      <div class="metric-value">${escapeHtml(model.headline)}</div>
+      <div class="metric-label">tree status</div>
+    </div>
+    <div class="metric">
+      <div class="metric-value">${model.counts.changes}</div>
+      <div class="metric-label">changes</div>
+    </div>
+    <div class="metric ${model.counts.conflicts > 0 ? 'conflict' : ''}">
+      <div class="metric-value">${model.counts.conflicts}</div>
+      <div class="metric-label">conflicts</div>
+    </div>
+    <div class="metric">
+      <div class="metric-value">${model.counts.revisions}</div>
+      <div class="metric-label">recent revisions</div>
+    </div>
+  </section>`;
+}
+
+function renderErrors(model: BazaarExploreModel): string {
+  if (model.errors.length === 0) {
+    return '';
+  }
+  return `<section class="section errors">
+    <h2>Load Errors</h2>
+    ${model.errors.map((error) => `<div class="row"><div class="primary">${escapeHtml(error.source)}</div><div class="secondary">${escapeHtml(error.message)}</div></div>`).join('')}
+  </section>`;
+}
+
+function renderStatus(model: BazaarExploreModel): string {
+  if (model.statusGroups.length === 0) {
+    return '<div class="empty">作業ツリーに表示対象の変更はありません。</div>';
+  }
+  return model.statusGroups.map((group) => `<div class="status-group">
+    <div class="status-heading"><span>${escapeHtml(group.label)}</span><span>${group.items.length}</span></div>
+    ${group.items.map((item) => `<div class="row"><div class="primary" title="${escapeHtml(item.path)}">${escapeHtml(item.path)}</div><div class="secondary">${escapeHtml(item.oldPath ? `${item.oldPath} -> ${item.description}` : item.description)}</div></div>`).join('')}
+  </div>`).join('');
+}
+
+function renderGraph(model: BazaarExploreModel): string {
+  if (model.graph.nodes.length === 0) {
+    return '<div class="empty">履歴グラフを表示するリビジョンがありません。</div>';
+  }
+
+  const rowHeight = 34;
+  const columnWidth = 46;
+  const radius = 5;
+  const width = Math.max(300, 180 + Math.max(0, ...model.graph.nodes.map((node) => node.x)) * columnWidth);
+  const height = Math.max(120, model.graph.nodes.length * rowHeight + 28);
+  const nodeById = new Map(model.graph.nodes.map((node) => [node.id, node]));
+  const edgeSvg = model.graph.edges.map((edge) => {
+    const from = nodeById.get(edge.from);
+    const to = nodeById.get(edge.to);
+    if (!from || !to) {
+      return '';
+    }
+    const x1 = 18 + from.x * columnWidth;
+    const y1 = 18 + from.y * rowHeight;
+    const x2 = 18 + to.x * columnWidth;
+    const y2 = 18 + to.y * rowHeight;
+    const midY = y1 + Math.max(8, Math.abs(y2 - y1) / 2);
+    return `<path d="M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}" fill="none" stroke="var(--vscode-descriptionForeground)" stroke-width="1.2" />`;
+  }).join('');
+  const nodeSvg = model.graph.nodes.map((node) => {
+    const x = 18 + node.x * columnWidth;
+    const y = 18 + node.y * rowHeight;
+    const labelX = x + 14;
+    return `<g class="node" data-revision-id="${escapeHtml(node.id)}">
+      <circle cx="${x}" cy="${y}" r="${radius}" />
+      <text x="${labelX}" y="${y}" fill="var(--vscode-foreground)">${escapeHtml(firstLine(node.label))}</text>
+    </g>`;
+  }).join('');
+
+  return `<div class="graph-wrap"><svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="Bazaar リビジョングラフ">${edgeSvg}${nodeSvg}</svg></div>`;
+}
+
+function renderBranches(model: BazaarExploreModel): string {
+  if (model.branches.length === 0) {
+    return '<div class="empty">ブランチ情報は読み込まれていません。</div>';
+  }
+  return model.branches.slice(0, 12).map((branch) => `<div class="row">
+    <div class="primary">${branch.current ? '* ' : ''}${escapeHtml(branch.name)}</div>
+    <div class="secondary" title="${escapeHtml(branch.path)}">${escapeHtml(branch.path)}</div>
+  </div>`).join('');
+}
+
+function renderShelvesAndTags(model: BazaarExploreModel): string {
+  const shelves = model.shelves.length
+    ? model.shelves.slice(0, 8).map((shelf) => `<div class="row"><div class="primary">shelf ${escapeHtml(shelf.id)}</div><div class="secondary">${escapeHtml(shelf.message)}</div></div>`).join('')
+    : '<div class="empty">シェルブはありません。</div>';
+  const tags = model.tags.length
+    ? model.tags.slice(0, 12).map((tag) => `<div class="row"><div class="primary">${escapeHtml(tag.name)}</div><div class="secondary">${escapeHtml(tag.revision)}</div></div>`).join('')
+    : '<div class="empty">タグは読み込まれていません。</div>';
+  return `${shelves}<div style="height: 8px"></div>${tags}`;
+}
+
+function renderInfo(model: BazaarExploreModel): string {
+  if (model.infoItems.length === 0) {
+    return `<div class="empty">Bazaar info の表示項目はありません。${model.loadedAt ? ` 最終更新: ${escapeHtml(model.loadedAt)}` : ''}</div>`;
+  }
+  return `${model.infoItems.map((item) => `<div class="row"><div class="primary">${escapeHtml(item.label)}</div><div class="secondary" title="${escapeHtml(item.value)}">${escapeHtml(item.value)}</div></div>`).join('')}
+    <div class="row"><div class="primary">Loaded at</div><div class="secondary">${escapeHtml(model.loadedAt)}</div></div>`;
+}
+
+function firstLine(value: string): string {
+  return value.split(/\r?\n/)[0]?.trim() || '(メッセージなし)';
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}

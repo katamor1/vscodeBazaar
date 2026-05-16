@@ -28,6 +28,8 @@ export const UNAVAILABLE_COMMANDS = [
   'bazaar.lock.break',
   'bazaar.doctor',
   'bazaar.openResourceDiff',
+  'bazaar.explore.open',
+  'bazaar.explore.refresh',
   'bazaar.history.refresh',
   'bazaar.history.search',
   'bazaar.history.clearFileFilter',
