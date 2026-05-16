@@ -40,6 +40,27 @@ describe('parseStatus', () => {
       { path: 'memo draft.txt', kind: 'unknown' }
     ]);
   });
+
+  it('keeps pending merge tips as a pseudo change instead of file paths', () => {
+    const result = parseStatus([
+      'modified:',
+      '  src/app.ts',
+      'pending merge tips: (use -v to see all merge revisions)',
+      '  test 2026-05-16 b4',
+      'added:',
+      '  src/new.ts'
+    ].join('\n'));
+
+    expect(result).toEqual([
+      { path: 'src/app.ts', kind: 'modified' },
+      {
+        path: 'Pending merge',
+        kind: 'pendingMerge',
+        description: 'pending merge tips: (use -v to see all merge revisions)\n  test 2026-05-16 b4'
+      },
+      { path: 'src/new.ts', kind: 'added' }
+    ]);
+  });
 });
 
 describe('parseConflicts', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BazaarClient } from '../src/bazaar/client';
+import { BazaarClient, isPullDivergedError } from '../src/bazaar/client';
 
 describe('BazaarClient', () => {
   it('commits exactly the included file list with a message', async () => {
@@ -17,6 +17,25 @@ describe('BazaarClient', () => {
 
     expect(calls).toEqual([
       ['commit', '-m', 'work in progress', 'src/app.ts', 'docs/current spec.md']
+    ]);
+  });
+
+  it('commits the whole Bazaar tree only when explicitly requested', async () => {
+    const calls: string[][] = [];
+    const client = new BazaarClient({
+      cwd: 'C:/repo',
+      cliPath: 'bzr',
+      run: async (args) => {
+        calls.push([...args]);
+        return { stdout: '', stderr: '', exitCode: 0 };
+      }
+    });
+
+    await expect(client.commit('merge state only', [])).rejects.toThrow('No included files to commit');
+    await client.commit('merge state only', [], { wholeTree: true });
+
+    expect(calls).toEqual([
+      ['commit', '-m', 'merge state only']
     ]);
   });
 
@@ -100,6 +119,99 @@ describe('BazaarClient', () => {
     expect(calls).toEqual([]);
   });
 
+  it('terminates Bazaar cat options before passing the revision path', async () => {
+    const calls: string[][] = [];
+    const client = new BazaarClient({
+      cwd: 'C:/repo',
+      cliPath: 'bzr',
+      run: async (args) => {
+        calls.push([...args]);
+        return { stdout: 'content', stderr: '', exitCode: 0 };
+      }
+    });
+
+    await expect(client.catAtRevision('7', '--help')).resolves.toBe('content');
+
+    expect(calls).toEqual([
+      ['cat', '-r', '7', '--', '--help']
+    ]);
+  });
+
+  it('pushes to the parent branch when Bazaar has no remembered push location', async () => {
+    const calls: string[][] = [];
+    const client = new BazaarClient({
+      cwd: 'C:/repo/feature',
+      cliPath: 'bzr',
+      run: async (args) => {
+        calls.push([...args]);
+        if (args.length === 1 && args[0] === 'push') {
+          return {
+            stdout: '',
+            stderr: "bzr: ERROR: No push location known or specified. To push to the parent branch (at C:/repo/trunk/), use 'bzr push :parent'.",
+            exitCode: 3
+          };
+        }
+        return { stdout: '', stderr: '', exitCode: 0 };
+      }
+    });
+
+    await expect(client.push()).resolves.toBeUndefined();
+    expect(calls).toEqual([
+      ['push'],
+      ['push', ':parent']
+    ]);
+  });
+
+  it('detects diverged pull errors for the extension merge workflow', async () => {
+    const calls: string[][] = [];
+    const client = new BazaarClient({
+      cwd: 'C:/repo/branch2',
+      cliPath: 'bzr',
+      run: async (args) => {
+        calls.push([...args]);
+        return {
+          stdout: 'デフォルトの親ブランチを使用します。: C:/repo/branch1/',
+          stderr: 'bzr: ERROR: These branches have diverged. Use the missing command to see how.\nUse the merge command to reconcile them.',
+          exitCode: 3
+        };
+      }
+    });
+
+    let caught: unknown;
+    try {
+      await client.pull();
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(isPullDivergedError(caught)).toBe(true);
+    expect(calls).toEqual([
+      ['pull']
+    ]);
+  });
+
+  it('supports parent merge and missing output after diverged pull', async () => {
+    const calls: string[][] = [];
+    const client = new BazaarClient({
+      cwd: 'C:/repo/branch2',
+      cliPath: 'bzr',
+      run: async (args) => {
+        calls.push([...args]);
+        if (args[0] === 'merge') {
+          return { stdout: 'Text conflict in app.txt\n1 conflicts encountered.\n', stderr: '', exitCode: 1 };
+        }
+        return { stdout: 'You have 1 extra revision(s):\n', stderr: '', exitCode: 1 };
+      }
+    });
+
+    await expect(client.mergeParent()).resolves.toContain('Text conflict');
+    await expect(client.missing()).resolves.toContain('extra revision');
+    expect(calls).toEqual([
+      ['merge'],
+      ['missing']
+    ]);
+  });
+
   it('falls back to versioned status and unknown ls when full status hits Bazaar recursion', async () => {
     const calls: string[][] = [];
     const client = new BazaarClient({
@@ -130,6 +242,25 @@ describe('BazaarClient', () => {
       ['status'],
       ['status', '--versioned', '--no-classify'],
       ['ls', '--unknown', '--from-root']
+    ]);
+  });
+
+  it('returns an empty status when the versioned fallback also hits Bazaar recursion', async () => {
+    const recursion = 'bzr: ERROR: exceptions.RuntimeError: maximum recursion depth exceeded while calling a Python object';
+    const calls: string[][] = [];
+    const client = new BazaarClient({
+      cwd: 'C:/repo',
+      cliPath: 'bzr',
+      run: async (args) => {
+        calls.push([...args]);
+        return { stdout: '', stderr: recursion, exitCode: 3 };
+      }
+    });
+
+    await expect(client.status()).resolves.toEqual([]);
+    expect(calls).toEqual([
+      ['status'],
+      ['status', '--versioned', '--no-classify']
     ]);
   });
 

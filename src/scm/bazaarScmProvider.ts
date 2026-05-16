@@ -1,16 +1,25 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { BazaarClient, BazaarCommandError } from '../bazaar/client';
+import { BazaarClient, BazaarCommandError, isPullDivergedError } from '../bazaar/client';
+import { resolveTextConflictMarkers, type TextConflictResolution } from '../bazaar/conflictMarkers';
 import { IncludedSet } from '../bazaar/staging';
-import type { BazaarChange, BazaarCleanTreeKind, BazaarConflict, BazaarChangeKind } from '../bazaar/types';
+import type { BazaarChange, BazaarCleanTreeKind, BazaarConflict, BazaarChangeKind, BazaarConflictAction } from '../bazaar/types';
 import { groupWorkspaceState } from './model';
+import type { BazaarGeneratedDocumentProvider } from './generatedDocumentProvider';
 import { BazaarOriginalDocumentProvider } from './originalDocumentProvider';
 import { expandUnknownDirectories } from '../bazaar/unknownExpansion';
 import { confirmDangerousOperation } from '../views/confirmation';
+import { pendingMergeForgetPrompt } from './pendingMerge';
+import { createResourceOpenCommand } from './resourceCommand';
 
 type BazaarResourceData =
   | { type: 'change'; change: BazaarChange }
   | { type: 'conflict'; conflict: BazaarConflict };
+
+type ConflictResolutionAction =
+  | Extract<BazaarConflictAction, 'take-this' | 'take-other'>
+  | 'take-both-this-first'
+  | 'take-both-this-last';
 
 export class BazaarResourceState implements vscode.SourceControlResourceState {
   readonly resourceUri: vscode.Uri;
@@ -20,14 +29,17 @@ export class BazaarResourceState implements vscode.SourceControlResourceState {
 
   constructor(
     readonly rootPath: string,
-    readonly data: BazaarResourceData
+    readonly data: BazaarResourceData,
+    commandForResource?: (resourceUri: vscode.Uri) => vscode.Command
   ) {
     const relativePath = data.type === 'change' ? data.change.path : data.conflict.path;
-    this.resourceUri = vscode.Uri.file(path.join(rootPath, relativePath));
-    this.command = {
-      command: 'bazaar.openResourceDiff',
-      title: 'Open Bazaar Changes',
-      arguments: [this]
+    this.resourceUri = data.type === 'change' && data.change.kind === 'pendingMerge'
+      ? vscode.Uri.from({ scheme: 'bazaar-pending-merge', path: '/Pending merge' })
+      : vscode.Uri.file(path.join(rootPath, relativePath));
+    this.command = commandForResource?.(this.resourceUri) ?? {
+      command: 'vscode.open',
+      title: 'Open Bazaar File',
+      arguments: [this.resourceUri]
     };
     this.contextValue = data.type === 'change' ? data.change.kind : 'conflict';
     this.decorations = data.type === 'change'
@@ -61,6 +73,7 @@ export class BazaarScmProvider implements vscode.Disposable {
     private readonly rootPath: string,
     private readonly client: BazaarClient,
     private readonly originalProvider: BazaarOriginalDocumentProvider,
+    private readonly generatedProvider: BazaarGeneratedDocumentProvider,
     private readonly output: vscode.OutputChannel
   ) {
     const rootUri = vscode.Uri.file(rootPath);
@@ -99,6 +112,7 @@ export class BazaarScmProvider implements vscode.Disposable {
       vscode.commands.registerCommand('bazaar.includeAll', () => this.includeAll()),
       vscode.commands.registerCommand('bazaar.revert', (resource?: BazaarResourceState) => this.revert(resource)),
       vscode.commands.registerCommand('bazaar.revertAll', () => this.revertAll()),
+      vscode.commands.registerCommand('bazaar.merge.forgetPending', (resource?: BazaarResourceState) => this.forgetPendingMerges(resource)),
       vscode.commands.registerCommand('bazaar.commit', () => this.commit()),
       vscode.commands.registerCommand('bazaar.pull', () => this.pull()),
       vscode.commands.registerCommand('bazaar.push', () => this.push()),
@@ -107,6 +121,8 @@ export class BazaarScmProvider implements vscode.Disposable {
       vscode.commands.registerCommand('bazaar.conflict.openMerge', (resource?: BazaarResourceState) => this.openConflictMerge(resource)),
       vscode.commands.registerCommand('bazaar.conflict.takeThis', (resource?: BazaarResourceState) => this.resolveConflictAction(resource, 'take-this')),
       vscode.commands.registerCommand('bazaar.conflict.takeOther', (resource?: BazaarResourceState) => this.resolveConflictAction(resource, 'take-other')),
+      vscode.commands.registerCommand('bazaar.conflict.takeBothThisFirst', (resource?: BazaarResourceState) => this.resolveConflictAction(resource, 'take-both-this-first')),
+      vscode.commands.registerCommand('bazaar.conflict.takeBothThisLast', (resource?: BazaarResourceState) => this.resolveConflictAction(resource, 'take-both-this-last')),
       vscode.commands.registerCommand('bazaar.conflict.resolveAll', () => this.resolveAll()),
       vscode.commands.registerCommand('bazaar.cleanTree.preview', () => this.previewCleanTree()),
       vscode.commands.registerCommand('bazaar.cleanTree.run', () => this.runCleanTree()),
@@ -164,6 +180,10 @@ export class BazaarScmProvider implements vscode.Disposable {
     if (!change) {
       return;
     }
+    if (isPendingMergeChange(change)) {
+      await this.forgetPendingMerges(resource);
+      return;
+    }
 
     const answer = await vscode.window.showWarningMessage(
       `Revert Bazaar changes in ${change.path}?`,
@@ -182,13 +202,31 @@ export class BazaarScmProvider implements vscode.Disposable {
   }
 
   async revertAll(): Promise<void> {
-    if (!(await confirmDangerousOperation({ id: 'revert-all', label: 'Revert all Bazaar changes', target: this.rootPath }))) {
+    if (!(await confirmDangerousOperation({ id: 'revert-all', label: 'Revert all Bazaar changes and pending merge state', target: this.rootPath }))) {
       return;
     }
 
     await this.runWithProgress('revert all', 'Reverting all Bazaar changes', async () => {
       await this.client.revertAll();
       this.includedSet.clear();
+      await this.refresh();
+    });
+  }
+
+  async forgetPendingMerges(resource?: BazaarResourceState): Promise<void> {
+    const pendingMerge = pendingMergeChangeFromResource(resource) ?? this.currentChanges.find(isPendingMergeChange);
+    const prompt = pendingMergeForgetPrompt(pendingMerge, this.rootPath);
+    const answer = await vscode.window.showWarningMessage(
+      prompt.message,
+      { modal: true, detail: prompt.detail },
+      'Forget Pending Merge'
+    );
+    if (answer !== 'Forget Pending Merge') {
+      return;
+    }
+
+    await this.runWithProgress('revert --forget-merges', 'Forgetting Bazaar pending merge state', async () => {
+      await this.client.forgetMerges();
       await this.refresh();
     });
   }
@@ -205,10 +243,26 @@ export class BazaarScmProvider implements vscode.Disposable {
       vscode.window.showWarningMessage('Include at least one Bazaar change before committing.');
       return;
     }
+    const includesPendingMerge = includedChanges.some(isPendingMergeChange);
+    if (includesPendingMerge) {
+      const answer = await vscode.window.showWarningMessage(
+        'Commit Bazaar pending merge state? Bazaar merge commits are whole-tree commits, so this will run bzr commit without a file list.',
+        { modal: true },
+        'Commit Merge'
+      );
+      if (answer !== 'Commit Merge') {
+        return;
+      }
+    }
 
     await this.runWithProgress('commit', 'Committing included Bazaar changes', async () => {
-      await this.client.prepareIncludedForCommit(includedChanges);
-      await this.client.commit(message, includedChanges.map((change) => change.path));
+      const fileChanges = includedChanges.filter((change) => !isPendingMergeChange(change));
+      await this.client.prepareIncludedForCommit(fileChanges);
+      await this.client.commit(
+        message,
+        includesPendingMerge ? [] : fileChanges.map((change) => change.path),
+        { wholeTree: includesPendingMerge }
+      );
       this.sourceControl.inputBox.value = '';
       this.includedSet.clear();
       await this.refresh();
@@ -217,8 +271,15 @@ export class BazaarScmProvider implements vscode.Disposable {
 
   async pull(): Promise<void> {
     await this.runWithProgress('pull', 'Running Bazaar pull', async () => {
-      await this.client.pull();
-      await this.refresh();
+      try {
+        await this.client.pull();
+        await this.refresh();
+      } catch (error) {
+        if (!isPullDivergedError(error)) {
+          throw error;
+        }
+        await this.handleDivergedPull(error);
+      }
     });
   }
 
@@ -262,21 +323,45 @@ export class BazaarScmProvider implements vscode.Disposable {
     }
   }
 
-  async resolveConflictAction(resource: BazaarResourceState | undefined, action: 'take-this' | 'take-other'): Promise<void> {
+  async resolveConflictAction(resource: BazaarResourceState | undefined, action: ConflictResolutionAction): Promise<void> {
     if (!resource || resource.data.type !== 'conflict') {
       return;
     }
 
     const conflict = resource.data.conflict;
-    const label = action === 'take-this' ? 'Resolve Bazaar conflict using this version' : 'Resolve Bazaar conflict using other version';
-    if (!(await confirmDangerousOperation({ id: `resolve-${action}`, label, target: conflict.path }))) {
-      return;
-    }
-
     await this.runWithProgress(`resolve ${action}`, `Resolving ${conflict.path}`, async () => {
-      await this.client.resolveConflict(conflict.path, action);
+      if (action === 'take-this' || action === 'take-other') {
+        await this.client.resolveConflict(conflict.path, action);
+      } else if (await this.applyTextConflictResolution(resource.resourceUri, action)) {
+        await this.client.resolve(conflict.path);
+      } else {
+        vscode.window.showWarningMessage(`No text conflict markers were found in ${conflict.path}. Open the merge editor or resolve it manually.`);
+        return;
+      }
       await this.refresh();
     });
+  }
+
+  private async applyTextConflictResolution(resourceUri: vscode.Uri, action: Extract<ConflictResolutionAction, 'take-both-this-first' | 'take-both-this-last'>): Promise<boolean> {
+    const document = await vscode.workspace.openTextDocument(resourceUri);
+    const resolution = textResolutionForAction(action);
+    const resolved = resolveTextConflictMarkers(document.getText(), resolution);
+    if (resolved.resolvedCount === 0) {
+      return false;
+    }
+
+    const edit = new vscode.WorkspaceEdit();
+    const fullRange = new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length));
+    edit.replace(document.uri, fullRange, resolved.content);
+    const applied = await vscode.workspace.applyEdit(edit);
+    if (!applied) {
+      throw new Error(`Unable to update ${document.uri.fsPath}.`);
+    }
+    const saved = await document.save();
+    if (!saved) {
+      throw new Error(`Unable to save ${document.uri.fsPath}.`);
+    }
+    return true;
   }
 
   async resolveAll(): Promise<void> {
@@ -348,7 +433,7 @@ export class BazaarScmProvider implements vscode.Disposable {
     const content = candidates.length > 0
       ? candidates.map((candidate) => `${candidate.kind}\t${candidate.path}`).join('\n')
       : 'No clean-tree candidates.';
-    const document = await vscode.workspace.openTextDocument({ content, language: 'text' });
+    const document = await this.generatedProvider.openDocument('Bazaar Clean Tree Preview', content, 'text');
     await vscode.window.showTextDocument(document, { preview: true });
   }
 
@@ -381,7 +466,7 @@ export class BazaarScmProvider implements vscode.Disposable {
     }
     this.previewedUncommitRevision = revision.trim() || undefined;
     const content = await this.client.uncommitDryRun(this.previewedUncommitRevision);
-    const document = await vscode.workspace.openTextDocument({ content, language: 'text' });
+    const document = await this.generatedProvider.openDocument('Bazaar Uncommit Preview', content, 'text');
     await vscode.window.showTextDocument(document, { preview: true });
   }
 
@@ -403,7 +488,7 @@ export class BazaarScmProvider implements vscode.Disposable {
 
   async breakLock(): Promise<void> {
     const info = await this.client.infoText();
-    const document = await vscode.workspace.openTextDocument({ content: info, language: 'text' });
+    const document = await this.generatedProvider.openDocument('Bazaar Working Tree Info', info, 'text');
     await vscode.window.showTextDocument(document, { preview: true });
     if (!(await confirmDangerousOperation({ id: 'break-lock', label: 'Break Bazaar lock', target: this.rootPath }))) {
       return;
@@ -469,7 +554,9 @@ export class BazaarScmProvider implements vscode.Disposable {
   }
 
   private resourceForChange(change: BazaarChange): BazaarResourceState {
-    return new BazaarResourceState(this.rootPath, { type: 'change', change });
+    return new BazaarResourceState(this.rootPath, { type: 'change', change }, (resourceUri) =>
+      createResourceOpenCommand(change, resourceUri, this.originalProvider.createUriForPath(change.path))
+    );
   }
 
   private resourceForConflict(conflict: BazaarConflict): BazaarResourceState {
@@ -504,19 +591,67 @@ export class BazaarScmProvider implements vscode.Disposable {
 
   private reportError(label: string, error: unknown): void {
     if (error instanceof BazaarCommandError) {
-      this.output.appendLine(`Command failed: bzr ${error.args.join(' ')}`);
-      if (error.result.stdout) {
-        this.output.appendLine(error.result.stdout.trimEnd());
-      }
-      if (error.result.stderr) {
-        this.output.appendLine(error.result.stderr.trimEnd());
-      }
+      this.appendCommandError(error);
     } else {
       this.output.appendLine(formatError(error));
     }
 
     this.output.show(true);
     vscode.window.showErrorMessage(`Bazaar ${label} failed. See Bazaar output for details.`);
+  }
+
+  private async handleDivergedPull(error: unknown): Promise<void> {
+    if (error instanceof BazaarCommandError) {
+      this.output.appendLine('Bazaar pull stopped because the parent and current branches have diverged.');
+      this.appendCommandError(error);
+    }
+
+    const action = await vscode.window.showWarningMessage(
+      'Bazaar pull cannot continue because the branches have diverged. Use Bazaar merge to reconcile them.',
+      'Merge Parent',
+      'Show Missing',
+      'Open Output'
+    );
+
+    if (action === 'Merge Parent') {
+      try {
+        await this.client.mergeParent();
+        await this.refresh();
+        vscode.window.showInformationMessage('Bazaar merge completed. Resolve conflicts if needed, then commit the merge.');
+      } catch (mergeError) {
+        this.reportError('merge', mergeError);
+      }
+      return;
+    }
+
+    if (action === 'Show Missing') {
+      try {
+        const content = await this.client.missing();
+        const document = await this.generatedProvider.openDocument(
+          'Bazaar Missing Revisions',
+          content.trimEnd() || 'Bazaar reports no missing revisions.',
+          'text'
+        );
+        await vscode.window.showTextDocument(document, { preview: true });
+      } catch (missingError) {
+        this.reportError('missing', missingError);
+      }
+      return;
+    }
+
+    if (action === 'Open Output') {
+      this.output.show(true);
+    }
+  }
+
+  private appendCommandError(error: BazaarCommandError): void {
+    this.output.appendLine(`Command failed: bzr ${error.args.join(' ')}`);
+    if (error.result.stdout) {
+      this.output.appendLine(error.result.stdout.trimEnd());
+    }
+    if (error.result.stderr) {
+      this.output.appendLine(error.result.stderr.trimEnd());
+    }
   }
 }
 
@@ -537,6 +672,8 @@ function iconForKind(kind: BazaarChangeKind): string {
       return 'remove';
     case 'renamed':
       return 'arrow-right';
+    case 'pendingMerge':
+      return 'git-merge';
     case 'unknown':
       return 'question';
     case 'modified':
@@ -553,12 +690,29 @@ function labelForKind(kind: BazaarChangeKind): string {
       return 'Removed in Bazaar';
     case 'renamed':
       return 'Renamed in Bazaar';
+    case 'pendingMerge':
+      return 'Pending Bazaar merge';
     case 'unknown':
       return 'Unknown to Bazaar';
     case 'modified':
     default:
       return 'Modified in Bazaar';
   }
+}
+
+function isPendingMergeChange(change: BazaarChange): boolean {
+  return change.kind === 'pendingMerge';
+}
+
+function pendingMergeChangeFromResource(resource: BazaarResourceState | undefined): BazaarChange | undefined {
+  if (!resource || resource.data.type !== 'change' || !isPendingMergeChange(resource.data.change)) {
+    return undefined;
+  }
+  return resource.data.change;
+}
+
+function textResolutionForAction(action: Extract<ConflictResolutionAction, 'take-both-this-first' | 'take-both-this-last'>): TextConflictResolution {
+  return action === 'take-both-this-first' ? 'both-this-first' : 'both-this-last';
 }
 
 function formatError(error: unknown): string {

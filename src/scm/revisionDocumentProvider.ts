@@ -1,11 +1,10 @@
 import * as vscode from 'vscode';
 import type { BazaarClient } from '../bazaar/client';
-
-interface RevisionQuery {
-  path: string;
-  revision: string;
-  empty?: boolean;
-}
+import {
+  type RevisionDocumentQuery,
+  decodeRevisionDocumentQuery,
+  encodeRevisionDocumentQuery
+} from './revisionDocumentQuery';
 
 export class BazaarRevisionDocumentProvider implements vscode.TextDocumentContentProvider {
   static readonly scheme = 'bazaar-revision';
@@ -28,6 +27,10 @@ export class BazaarRevisionDocumentProvider implements vscode.TextDocumentConten
 
   async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
     const query = this.readQuery(uri);
+    if (!query) {
+      this.output.appendLine(`Ignoring invalid Bazaar revision document URI: ${uri.toString()}`);
+      return '';
+    }
     if (query.empty) {
       return '';
     }
@@ -44,8 +47,8 @@ export class BazaarRevisionDocumentProvider implements vscode.TextDocumentConten
     this.onDidChangeEmitter.dispose();
   }
 
-  private createUri(query: RevisionQuery): vscode.Uri {
-    const encoded = encodeURIComponent(JSON.stringify(query));
+  private createUri(query: RevisionDocumentQuery): vscode.Uri {
+    const encoded = encodeRevisionDocumentQuery(query);
     return vscode.Uri.from({
       scheme: BazaarRevisionDocumentProvider.scheme,
       path: `/${query.path.replace(/\\/g, '/')}`,
@@ -53,12 +56,8 @@ export class BazaarRevisionDocumentProvider implements vscode.TextDocumentConten
     });
   }
 
-  private readQuery(uri: vscode.Uri): RevisionQuery {
-    const parsed = JSON.parse(decodeURIComponent(uri.query)) as RevisionQuery;
-    if (!parsed.path || !parsed.revision) {
-      throw new Error('Bazaar revision document URI is missing path or revision.');
-    }
-    return parsed;
+  private readQuery(uri: vscode.Uri): RevisionDocumentQuery | undefined {
+    return decodeRevisionDocumentQuery(uri.query);
   }
 }
 

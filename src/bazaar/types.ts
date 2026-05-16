@@ -1,9 +1,12 @@
-export type BazaarChangeKind = 'modified' | 'added' | 'removed' | 'renamed' | 'unknown';
+export const PENDING_MERGE_PATH = 'Pending merge';
+
+export type BazaarChangeKind = 'modified' | 'added' | 'removed' | 'renamed' | 'unknown' | 'pendingMerge';
 
 export interface BazaarChange {
   path: string;
   kind: BazaarChangeKind;
   oldPath?: string;
+  description?: string;
 }
 
 export interface BazaarConflict {
@@ -64,6 +67,7 @@ export interface BazaarInfo {
   branchRoot?: string;
   repository?: string;
   checkoutRoot?: string;
+  checkoutOfBranch?: string;
 }
 
 export interface BazaarAnnotation {

@@ -1,4 +1,4 @@
-import type { BazaarChange, BazaarChangeKind, BazaarConflict } from './types';
+import { PENDING_MERGE_PATH, type BazaarChange, type BazaarChangeKind, type BazaarConflict } from './types';
 
 const sectionKinds = new Map<string, BazaarChangeKind>([
   ['modified', 'modified'],
@@ -11,16 +11,46 @@ const sectionKinds = new Map<string, BazaarChangeKind>([
 export function parseStatus(output: string): BazaarChange[] {
   const changes: BazaarChange[] = [];
   let currentKind: BazaarChangeKind | undefined;
+  const lines = output.split(/\r?\n/);
 
-  for (const rawLine of output.split(/\r?\n/)) {
+  for (let index = 0; index < lines.length; index++) {
+    const rawLine = lines[index];
     const line = rawLine.trimEnd();
     if (!line.trim()) {
+      continue;
+    }
+
+    if (isPendingMergeHeader(line)) {
+      const pendingLines = [line.trimEnd()];
+      while (index + 1 < lines.length) {
+        const nextLine = lines[index + 1].trimEnd();
+        if (!nextLine.trim()) {
+          index++;
+          continue;
+        }
+        if (/^\S/.test(nextLine)) {
+          break;
+        }
+        pendingLines.push(nextLine);
+        index++;
+      }
+      changes.push({
+        path: PENDING_MERGE_PATH,
+        kind: 'pendingMerge',
+        description: pendingLines.join('\n')
+      });
+      currentKind = undefined;
       continue;
     }
 
     const sectionMatch = line.match(/^([A-Za-z ]+):$/);
     if (sectionMatch) {
       currentKind = sectionKinds.get(sectionMatch[1].trim().toLowerCase());
+      continue;
+    }
+
+    if (/^\S/.test(line)) {
+      currentKind = undefined;
       continue;
     }
 
@@ -89,4 +119,8 @@ function extractConflictPath(description: string): string {
 
 function normalizePath(pathText: string): string {
   return pathText.trim().replace(/\\/g, '/');
+}
+
+function isPendingMergeHeader(line: string): boolean {
+  return /^pending merge tips:/i.test(line.trim());
 }

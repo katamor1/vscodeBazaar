@@ -2,6 +2,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { BazaarClient } from '../bazaar/client';
 import type { BazaarShelf } from '../bazaar/types';
+import type { BazaarGeneratedDocumentProvider } from '../scm/generatedDocumentProvider';
 import { confirmDangerousOperation } from './confirmation';
 
 type ShelfNode = { type: 'shelf'; shelf: BazaarShelf };
@@ -14,6 +15,7 @@ export class BazaarShelveView implements vscode.TreeDataProvider<ShelfNode>, vsc
   constructor(
     private readonly rootPath: string,
     private readonly client: BazaarClient,
+    private readonly generatedProvider: BazaarGeneratedDocumentProvider,
     private readonly output: vscode.OutputChannel
   ) {}
 
@@ -71,10 +73,7 @@ export class BazaarShelveView implements vscode.TreeDataProvider<ShelfNode>, vsc
       return;
     }
     const diff = await this.client.unshelvePreview(shelf.id);
-    const document = await vscode.workspace.openTextDocument({
-      content: diff,
-      language: 'diff'
-    });
+    const document = await this.generatedProvider.openDocument(`Bazaar Shelf ${shelf.id} Preview`, diff, 'diff');
     await vscode.window.showTextDocument(document, { preview: true });
   }
 

@@ -2,7 +2,9 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { BazaarClient } from './bazaar/client';
 import { findDotBzrRoot } from './bazaar/rootFinder';
+import { UNAVAILABLE_COMMANDS } from './extensionCommands';
 import { BazaarScmProvider } from './scm/bazaarScmProvider';
+import { BazaarGeneratedDocumentProvider } from './scm/generatedDocumentProvider';
 import { BazaarOriginalDocumentProvider } from './scm/originalDocumentProvider';
 import { BazaarRevisionDocumentProvider } from './scm/revisionDocumentProvider';
 import { BazaarBlameController } from './views/blameController';
@@ -11,6 +13,11 @@ import { BazaarGraphView } from './views/graphView';
 import { BazaarHistoryView } from './views/historyView';
 import { BazaarShelveView } from './views/shelveView';
 import { BazaarTagView } from './views/tagView';
+import {
+  createBranchSwitchRefreshTargets,
+  formatViewRefreshFailure,
+  refreshBazaarViewTargets
+} from './views/viewRefresh';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const output = vscode.window.createOutputChannel('Bazaar');
@@ -38,18 +45,39 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const client = new BazaarClient({ cwd: rootPath, cliPath });
   const originalProvider = new BazaarOriginalDocumentProvider(rootPath, client, output);
   const revisionProvider = new BazaarRevisionDocumentProvider(client, output);
-  const provider = new BazaarScmProvider(rootPath, client, originalProvider, output);
-  const historyView = new BazaarHistoryView(rootPath, client, revisionProvider, output);
-  const branchView = new BazaarBranchView(client);
+  const generatedProvider = new BazaarGeneratedDocumentProvider();
+  const provider = new BazaarScmProvider(rootPath, client, originalProvider, generatedProvider, output);
+  const historyView = new BazaarHistoryView(rootPath, client, revisionProvider, generatedProvider, output);
   const tagView = new BazaarTagView(client);
   const graphView = new BazaarGraphView(client);
-  const shelveView = new BazaarShelveView(rootPath, client, output);
-  const blameController = new BazaarBlameController(rootPath, client, output);
+  const shelveView = new BazaarShelveView(rootPath, client, generatedProvider, output);
+  const blameController = new BazaarBlameController(rootPath, client, revisionProvider, generatedProvider, output);
+  let branchView: BazaarBranchView;
+  const refreshAfterBranchSwitch = async () => {
+    const failures = await refreshBazaarViewTargets(createBranchSwitchRefreshTargets({
+      sourceControl: provider,
+      blame: blameController,
+      history: historyView,
+      branches: branchView,
+      tags: tagView,
+      shelves: shelveView,
+      graph: graphView
+    }));
+
+    for (const failure of failures) {
+      output.appendLine(`Bazaar refresh after branch switch failed: ${formatViewRefreshFailure(failure)}`);
+    }
+    if (failures.length > 0) {
+      vscode.window.showWarningMessage('Bazaar branch switched, but some views could not be refreshed. See Bazaar output for details.');
+    }
+  };
+  branchView = new BazaarBranchView(rootPath, client, output, refreshAfterBranchSwitch);
 
   context.subscriptions.push(
     provider,
     originalProvider,
     revisionProvider,
+    generatedProvider,
     historyView,
     branchView,
     tagView,
@@ -58,6 +86,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     blameController,
     vscode.workspace.registerTextDocumentContentProvider(BazaarOriginalDocumentProvider.scheme, originalProvider),
     vscode.workspace.registerTextDocumentContentProvider(BazaarRevisionDocumentProvider.scheme, revisionProvider),
+    vscode.workspace.registerTextDocumentContentProvider(BazaarGeneratedDocumentProvider.scheme, generatedProvider),
     vscode.window.registerTreeDataProvider('bazaarHistory', historyView),
     vscode.window.registerTreeDataProvider('bazaarBranches', branchView),
     vscode.window.registerTreeDataProvider('bazaarTags', tagView),
@@ -75,7 +104,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('bazaar.blame.toggle', () => runCommand(output, 'toggle blame', () => blameController.toggle())),
     vscode.commands.registerCommand('bazaar.blame.showCommit', () => runCommand(output, 'blame show commit', () => blameController.showCommit())),
     vscode.commands.registerCommand('bazaar.blame.showDiff', () => runCommand(output, 'blame show diff', () => blameController.showDiff())),
+    vscode.commands.registerCommand('bazaar.blame.openFileAtRevision', () => runCommand(output, 'blame open file at revision', () => blameController.openFileAtRevision())),
+    vscode.commands.registerCommand('bazaar.blame.openLineChangesWithPreviousRevision', () => runCommand(output, 'blame open line changes with previous revision', () => blameController.openLineChangesWithPreviousRevision())),
+    vscode.commands.registerCommand('bazaar.blame.openLineChangesWithWorkingFile', () => runCommand(output, 'blame open line changes with working file', () => blameController.openLineChangesWithWorkingFile())),
+    vscode.commands.registerCommand('bazaar.blame.openChangesWithPreviousRevision', () => runCommand(output, 'blame open changes with previous revision', () => blameController.openChangesWithPreviousRevision())),
+    vscode.commands.registerCommand('bazaar.blame.openChangesWithRevision', () => runCommand(output, 'blame open changes with revision', () => blameController.openChangesWithRevision())),
+    vscode.commands.registerCommand('bazaar.blame.openChangesWithBranchOrTag', () => runCommand(output, 'blame open changes with branch or tag', () => blameController.openChangesWithBranchOrTag())),
+    vscode.commands.registerCommand('bazaar.blame.quickShowLineCommit', () => runCommand(output, 'blame quick show line commit', () => blameController.quickShowLineCommit())),
+    vscode.commands.registerCommand('bazaar.blame.inspectLineCommitDetails', () => runCommand(output, 'blame inspect line commit details', () => blameController.inspectLineCommitDetails())),
     vscode.window.onDidChangeActiveTextEditor((editor) => runCommand(output, 'update blame', () => blameController.update(editor))),
+    vscode.window.onDidChangeTextEditorSelection((event) => runCommand(output, 'update blame selection', () => blameController.update(event.textEditor))),
     vscode.workspace.onDidSaveTextDocument(() => runCommand(output, 'refresh blame', () => blameController.refresh())),
     vscode.commands.registerCommand('bazaar.branch.refresh', () => runCommand(output, 'branch refresh', () => branchView.refresh())),
     vscode.commands.registerCommand('bazaar.branch.create', () => runCommand(output, 'branch create', () => branchView.create())),
@@ -144,54 +182,10 @@ function registerUnavailableCommands(
     vscode.window.showInformationMessage(message);
   };
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand('bazaar.openOutput', () => output.show()),
-    vscode.commands.registerCommand('bazaar.refresh', showUnavailable),
-    vscode.commands.registerCommand('bazaar.includeAll', showUnavailable),
-    vscode.commands.registerCommand('bazaar.commit', showUnavailable),
-    vscode.commands.registerCommand('bazaar.pull', showUnavailable),
-    vscode.commands.registerCommand('bazaar.push', showUnavailable),
-    vscode.commands.registerCommand('bazaar.resolveAuto', showUnavailable),
-    vscode.commands.registerCommand('bazaar.revertAll', showUnavailable),
-    vscode.commands.registerCommand('bazaar.conflict.openMerge', showUnavailable),
-    vscode.commands.registerCommand('bazaar.conflict.takeThis', showUnavailable),
-    vscode.commands.registerCommand('bazaar.conflict.takeOther', showUnavailable),
-    vscode.commands.registerCommand('bazaar.conflict.resolveAll', showUnavailable),
-    vscode.commands.registerCommand('bazaar.cleanTree.preview', showUnavailable),
-    vscode.commands.registerCommand('bazaar.cleanTree.run', showUnavailable),
-    vscode.commands.registerCommand('bazaar.uncommit.preview', showUnavailable),
-    vscode.commands.registerCommand('bazaar.uncommit.run', showUnavailable),
-    vscode.commands.registerCommand('bazaar.lock.break', showUnavailable),
-    vscode.commands.registerCommand('bazaar.doctor', showUnavailable),
-    vscode.commands.registerCommand('bazaar.history.refresh', showUnavailable),
-    vscode.commands.registerCommand('bazaar.history.search', showUnavailable),
-    vscode.commands.registerCommand('bazaar.history.clearFileFilter', showUnavailable),
-    vscode.commands.registerCommand('bazaar.history.showFileHistory', showUnavailable),
-    vscode.commands.registerCommand('bazaar.history.copyRevisionId', showUnavailable),
-    vscode.commands.registerCommand('bazaar.history.openFileAtRevision', showUnavailable),
-    vscode.commands.registerCommand('bazaar.blame.toggle', showUnavailable),
-    vscode.commands.registerCommand('bazaar.blame.showCommit', showUnavailable),
-    vscode.commands.registerCommand('bazaar.blame.showDiff', showUnavailable),
-    vscode.commands.registerCommand('bazaar.branch.refresh', showUnavailable),
-    vscode.commands.registerCommand('bazaar.branch.create', showUnavailable),
-    vscode.commands.registerCommand('bazaar.branch.switch', showUnavailable),
-    vscode.commands.registerCommand('bazaar.branch.switchForce', showUnavailable),
-    vscode.commands.registerCommand('bazaar.branch.remove', showUnavailable),
-    vscode.commands.registerCommand('bazaar.branch.removeForce', showUnavailable),
-    vscode.commands.registerCommand('bazaar.tag.refresh', showUnavailable),
-    vscode.commands.registerCommand('bazaar.tag.create', showUnavailable),
-    vscode.commands.registerCommand('bazaar.tag.delete', showUnavailable),
-    vscode.commands.registerCommand('bazaar.tag.forceMove', showUnavailable),
-    vscode.commands.registerCommand('bazaar.shelve.refresh', showUnavailable),
-    vscode.commands.registerCommand('bazaar.shelve.create', showUnavailable),
-    vscode.commands.registerCommand('bazaar.shelve.createAll', showUnavailable),
-    vscode.commands.registerCommand('bazaar.shelve.preview', showUnavailable),
-    vscode.commands.registerCommand('bazaar.shelve.apply', showUnavailable),
-    vscode.commands.registerCommand('bazaar.shelve.keep', showUnavailable),
-    vscode.commands.registerCommand('bazaar.shelve.delete', showUnavailable),
-    vscode.commands.registerCommand('bazaar.graph.open', showUnavailable),
-    vscode.commands.registerCommand('bazaar.graph.refresh', showUnavailable)
-  );
+  context.subscriptions.push(vscode.commands.registerCommand('bazaar.openOutput', () => output.show()));
+  for (const command of UNAVAILABLE_COMMANDS) {
+    context.subscriptions.push(vscode.commands.registerCommand(command, showUnavailable));
+  }
 }
 
 function registerAutoRefresh(

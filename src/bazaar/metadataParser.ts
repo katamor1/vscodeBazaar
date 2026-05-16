@@ -59,10 +59,12 @@ export function parseInfo(output: string): BazaarInfo {
     const value = match[2].trim();
     if (key === 'branch root') {
       info.branchRoot = value;
-    } else if (key === 'repository') {
+    } else if (key === 'repository' || key === 'shared repository') {
       info.repository = value;
-    } else if (key === 'checkout root') {
+    } else if (key === 'checkout root' || key === 'light checkout root') {
       info.checkoutRoot = value;
+    } else if (key === 'checkout of branch') {
+      info.checkoutOfBranch = value;
     }
   }
   return info;

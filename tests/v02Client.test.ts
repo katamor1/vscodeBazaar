@@ -20,7 +20,7 @@ describe('BazaarClient V0.2 commands', () => {
     await expect(client.conflictsText()).resolves.toEqual(['src/app.ts']);
 
     expect(calls).toEqual([
-      ['cat', '-r', 'revid:abc', 'src/app.ts'],
+      ['cat', '-r', 'revid:abc', '--', 'src/app.ts'],
       ['conflicts', '--text']
     ]);
   });
@@ -69,6 +69,7 @@ describe('BazaarClient V0.2 commands', () => {
     await client.resolveConflict('src/app.ts', 'take-this');
     await client.resolveAll();
     await client.revertAll();
+    await client.forgetMerges();
     await client.cleanTreeDryRun(['unknown', 'ignored']);
     await client.cleanTreeRun(['unknown']);
     await client.uncommitDryRun('3');
@@ -80,6 +81,7 @@ describe('BazaarClient V0.2 commands', () => {
       ['resolve', '--take-this', 'src/app.ts'],
       ['resolve', '--all'],
       ['revert'],
+      ['revert', '--forget-merges'],
       ['clean-tree', '--dry-run', '--unknown'],
       ['clean-tree', '--dry-run', '--ignored'],
       ['clean-tree', '--force', '--unknown'],

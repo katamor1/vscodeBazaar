@@ -41,6 +41,10 @@ export interface BazaarLogOptions {
   match?: string;
 }
 
+export interface BazaarCommitOptions {
+  wholeTree?: boolean;
+}
+
 export class BazaarCommandError extends Error {
   constructor(
     readonly args: readonly string[],
@@ -98,8 +102,8 @@ export class BazaarClient {
     }
   }
 
-  async commit(message: string, paths: readonly string[]): Promise<void> {
-    if (paths.length === 0) {
+  async commit(message: string, paths: readonly string[], options: BazaarCommitOptions = {}): Promise<void> {
+    if (paths.length === 0 && !options.wholeTree) {
       throw new Error('No included files to commit.');
     }
 
@@ -118,8 +122,26 @@ export class BazaarClient {
     await this.checked(['pull']);
   }
 
+  async missing(): Promise<string> {
+    const result = await this.checked(['missing'], [0, 1]);
+    return result.stdout || result.stderr;
+  }
+
+  async mergeParent(): Promise<string> {
+    const result = await this.checked(['merge'], [0, 1]);
+    return result.stdout || result.stderr;
+  }
+
   async push(): Promise<void> {
-    await this.checked(['push']);
+    try {
+      await this.checked(['push']);
+    } catch (error) {
+      if (isNoPushLocationKnownError(error)) {
+        await this.checked(['push', ':parent']);
+        return;
+      }
+      throw error;
+    }
   }
 
   async resolve(path: string): Promise<void> {
@@ -145,7 +167,7 @@ export class BazaarClient {
 
   async catAtRevision(revision: string, path: string): Promise<string> {
     const revisionSpec = requireRevisionSpec(revision);
-    const result = await this.checked(['cat', '-r', revisionSpec, path]);
+    const result = await this.checked(['cat', '-r', revisionSpec, '--', path]);
     return result.stdout;
   }
 
@@ -273,6 +295,10 @@ export class BazaarClient {
 
   async revertAll(): Promise<void> {
     await this.checked(['revert']);
+  }
+
+  async forgetMerges(): Promise<void> {
+    await this.checked(['revert', '--forget-merges']);
   }
 
   async cleanTreeDryRun(kinds: readonly BazaarCleanTreeKind[]): Promise<BazaarCleanTreeCandidate[]> {
@@ -406,8 +432,16 @@ export class BazaarClient {
   }
 
   private async statusFallbackForRecursionError(): Promise<BazaarChange[]> {
-    const versionedResult = await this.checked(['status', '--versioned', '--no-classify']);
-    const versionedChanges = parseStatus(versionedResult.stdout);
+    let versionedChanges: BazaarChange[];
+    try {
+      const versionedResult = await this.checked(['status', '--versioned', '--no-classify']);
+      versionedChanges = parseStatus(versionedResult.stdout);
+    } catch (error) {
+      if (isMaximumRecursionError(error)) {
+        return [];
+      }
+      throw error;
+    }
 
     try {
       const unknownResult = await this.checked(['ls', '--unknown', '--from-root'], [0, 1]);
@@ -444,6 +478,28 @@ function isMaximumRecursionError(error: unknown): boolean {
   }
   const output = `${error.result.stderr}\n${error.result.stdout}`.toLowerCase();
   return output.includes('maximum recursion depth exceeded');
+}
+
+function isNoPushLocationKnownError(error: unknown): boolean {
+  if (!(error instanceof BazaarCommandError)) {
+    return false;
+  }
+  if (error.args.length !== 1 || error.args[0] !== 'push') {
+    return false;
+  }
+  const output = `${error.result.stderr}\n${error.result.stdout}`.toLowerCase();
+  return output.includes('no push location known or specified') && output.includes('bzr push :parent');
+}
+
+export function isPullDivergedError(error: unknown): boolean {
+  if (!(error instanceof BazaarCommandError)) {
+    return false;
+  }
+  if (error.args.length !== 1 || error.args[0] !== 'pull') {
+    return false;
+  }
+  const output = `${error.result.stderr}\n${error.result.stdout}`.toLowerCase();
+  return output.includes('these branches have diverged') && output.includes('merge command');
 }
 
 function recursionFallbackText(command: string): string {

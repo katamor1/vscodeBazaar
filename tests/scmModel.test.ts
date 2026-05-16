@@ -9,7 +9,8 @@ describe('groupWorkspaceState', () => {
       { path: 'src/app.ts', kind: 'modified' },
       { path: 'docs/spec.md', kind: 'added' },
       { path: 'scratch.txt', kind: 'unknown' },
-      { path: 'conflicted.ts', kind: 'modified' }
+      { path: 'conflicted.ts', kind: 'modified' },
+      { path: 'Pending merge', kind: 'pendingMerge' }
     ];
     const conflicts: BazaarConflict[] = [
       { path: 'conflicted.ts', description: 'Text conflict in conflicted.ts' }
@@ -19,7 +20,7 @@ describe('groupWorkspaceState', () => {
 
     expect(groupWorkspaceState(changes, conflicts, included)).toEqual({
       included: [changes[0]],
-      changes: [changes[1]],
+      changes: [changes[1], changes[4]],
       untracked: [changes[2]],
       conflicts
     });

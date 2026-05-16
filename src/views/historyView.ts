@@ -1,14 +1,18 @@
-import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { BazaarClient } from '../bazaar/client';
 import { searchRevisions } from '../bazaar/historyParser';
 import { normalizeRevisionSpec } from '../bazaar/revisionSpec';
 import type { BazaarRevision } from '../bazaar/types';
+import type { BazaarGeneratedDocumentProvider } from '../scm/generatedDocumentProvider';
 import { BazaarRevisionDocumentProvider } from '../scm/revisionDocumentProvider';
+import {
+  type HistoryCommitDiffPlan,
+  createHistoryCommitDiffPlan
+} from './historyDiff';
+import { resolveFileHistoryTarget } from './historyFile';
 import {
   resolveRevisionCommandTarget,
   revisionDisplayLabel,
-  revisionSpecForCommand,
   revisionSpecForDocument
 } from './historyTarget';
 
@@ -29,6 +33,7 @@ export class BazaarHistoryView implements vscode.TreeDataProvider<HistoryNode>, 
     private readonly rootPath: string,
     private readonly client: BazaarClient,
     private readonly revisionProvider: BazaarRevisionDocumentProvider,
+    private readonly generatedProvider: BazaarGeneratedDocumentProvider,
     private readonly output: vscode.OutputChannel
   ) {}
 
@@ -180,19 +185,18 @@ export class BazaarHistoryView implements vscode.TreeDataProvider<HistoryNode>, 
   }
 
   async showFileHistory(uri?: vscode.Uri): Promise<void> {
-    const targetUri = uri ?? vscode.window.activeTextEditor?.document.uri;
-    if (!targetUri || targetUri.scheme !== 'file') {
-      vscode.window.showWarningMessage('Open a file inside the Bazaar tree first.');
+    const target = resolveFileHistoryTarget(
+      this.rootPath,
+      uri,
+      vscode.window.activeTextEditor?.document.uri
+    );
+    if ('warning' in target) {
+      vscode.window.showWarningMessage(target.warning);
       return;
     }
 
-    const relativePath = path.relative(this.rootPath, targetUri.fsPath).replace(/\\/g, '/');
-    if (relativePath.startsWith('..')) {
-      vscode.window.showWarningMessage('The selected file is outside the Bazaar tree.');
-      return;
-    }
-
-    await this.refresh(relativePath);
+    await this.refresh(target.relativePath);
+    await vscode.commands.executeCommand('bazaarHistory.focus');
   }
 
   async showCommit(target?: unknown): Promise<void> {
@@ -216,7 +220,11 @@ export class BazaarHistoryView implements vscode.TreeDataProvider<HistoryNode>, 
       ...(revision.changedPaths?.map((changedPath) => `* ${changedPath}`) ?? [])
     ].join('\n');
 
-    const document = await vscode.workspace.openTextDocument({ content, language: 'text' });
+    const document = await this.generatedProvider.openDocument(
+      `Bazaar Commit ${revisionDisplayLabel(revision)}`,
+      content,
+      'text'
+    );
     await vscode.window.showTextDocument(document, { preview: true });
   }
 
@@ -226,22 +234,18 @@ export class BazaarHistoryView implements vscode.TreeDataProvider<HistoryNode>, 
       showNoValidRevisionWarning();
       return;
     }
-    const revisionSpec = revisionSpecForCommand(revision);
-    if (!revisionSpec) {
+    const plan = createHistoryCommitDiffPlan(revision, changedPath);
+    if (!plan) {
       showNoValidRevisionWarning();
       return;
     }
 
-    const diffMode = vscode.workspace.getConfiguration('bazaar').get<string>('history.diffMode', 'editor');
-    if (diffMode === 'editor' && changedPath) {
-      await this.openRevisionDiff(revision, changedPath);
+    if (plan.kind === 'fileDiff') {
+      await this.openRevisionDiff(plan);
       return;
     }
 
-    const diff = await this.client.diffChange(revisionSpec, changedPath);
-    this.output.appendLine(`bzr diff -c ${revisionSpec}${changedPath ? ` ${changedPath}` : ''}`);
-    this.output.appendLine(diff.trimEnd());
-    this.output.show();
+    await this.openCommitDiffDocument(plan);
   }
 
   async openFileAtRevision(target?: unknown, changedPath?: string): Promise<void> {
@@ -267,18 +271,22 @@ export class BazaarHistoryView implements vscode.TreeDataProvider<HistoryNode>, 
     this.onDidChangeTreeDataEmitter.dispose();
   }
 
-  private async openRevisionDiff(revision: BazaarRevision, changedPath: string): Promise<void> {
-    const rightRevisionSpec = revisionSpecForDocument(revision);
-    if (!rightRevisionSpec) {
-      showNoValidRevisionWarning();
-      return;
-    }
-    const revisionLabel = revisionDisplayLabel(revision);
-    const right = this.revisionProvider.createUriForPath(changedPath, rightRevisionSpec);
-    const left = revision.parentIds[0]
-      ? this.revisionProvider.createUriForPath(changedPath, `revid:${revision.parentIds[0]}`)
-      : this.revisionProvider.createEmptyUri(changedPath, `before:${revisionLabel}`);
-    await vscode.commands.executeCommand('vscode.diff', left, right, `${changedPath} (${revisionLabel})`);
+  private async openRevisionDiff(plan: Extract<HistoryCommitDiffPlan, { kind: 'fileDiff' }>): Promise<void> {
+    const right = this.revisionProvider.createUriForPath(plan.changedPath, plan.rightRevision);
+    const left = plan.leftEmpty
+      ? this.revisionProvider.createEmptyUri(plan.changedPath, plan.leftRevision)
+      : this.revisionProvider.createUriForPath(plan.changedPath, plan.leftRevision);
+    await vscode.commands.executeCommand('vscode.diff', left, right, plan.title);
+  }
+
+  private async openCommitDiffDocument(plan: Extract<HistoryCommitDiffPlan, { kind: 'patchDocument' }>): Promise<void> {
+    const diff = await this.client.diffChange(plan.revisionSpec, plan.changedPath);
+    const document = await this.generatedProvider.openDocument(
+      plan.title,
+      diff.trimEnd() || '(no diff)',
+      'diff'
+    );
+    await vscode.window.showTextDocument(document, { preview: true });
   }
 }
 

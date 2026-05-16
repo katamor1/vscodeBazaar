@@ -1,8 +1,8 @@
 {
   "name": "vscode-bazaar",
   "displayName": "Bazaar SCM",
-  "description": "Bazaar source control integration for Visual Studio Code.",
-  "version": "0.2.2",
+  "description": "Bazaar SCM integration with status, history, graph, blame, branch, tag, shelf, conflict, and diff tools for Visual Studio Code.",
+  "version": "0.2.8",
   "publisher": "local",
   "license": "UNLICENSED",
   "engines": {
@@ -28,13 +28,13 @@
         "bazaar.cliPath": {
           "type": "string",
           "default": "bzr",
-          "description": "Path to the Bazaar command line executable."
+          "description": "Path to the Bazaar command-line executable used by this extension."
         },
         "bazaar.history.limit": {
           "type": "number",
           "default": 200,
           "minimum": 1,
-          "description": "Maximum number of Bazaar history revisions to load."
+          "description": "Maximum number of Bazaar history revisions to load in history and graph views."
         },
         "bazaar.history.includeMerged": {
           "type": "boolean",
@@ -64,21 +64,12 @@
             "revAuthorDate",
             "revAuthor"
           ],
-          "description": "Line-end format used by Bazaar blame decorations."
-        },
-        "bazaar.history.diffMode": {
-          "type": "string",
-          "default": "editor",
-          "enum": [
-            "editor",
-            "output"
-          ],
-          "description": "Display mode for Bazaar file diffs from history."
+          "description": "Line-end format used by Bazaar blame decorations for the cursor line or selected range."
         },
         "bazaar.dangerousOperations.requireTypedConfirmation": {
           "type": "boolean",
           "default": true,
-          "description": "Require exact typed confirmation for destructive Bazaar operations."
+          "description": "Require exact typed confirmation before destructive Bazaar operations such as clean-tree, uncommit, break-lock, and bulk conflict actions."
         }
       }
     },
@@ -135,8 +126,13 @@
       },
       {
         "command": "bazaar.revertAll",
-        "title": "Bazaar: Revert All",
+        "title": "Bazaar: Revert All Changes and Merge State",
         "icon": "$(discard)"
+      },
+      {
+        "command": "bazaar.merge.forgetPending",
+        "title": "Bazaar: Forget Pending Merge State",
+        "icon": "$(git-pull-request-closed)"
       },
       {
         "command": "bazaar.commit",
@@ -169,13 +165,23 @@
       },
       {
         "command": "bazaar.conflict.takeThis",
-        "title": "Bazaar: Resolve Taking This",
+        "title": "Bazaar: Resolve Using This",
         "icon": "$(arrow-left)"
       },
       {
         "command": "bazaar.conflict.takeOther",
-        "title": "Bazaar: Resolve Taking Other",
+        "title": "Bazaar: Resolve Using Other",
         "icon": "$(arrow-right)"
+      },
+      {
+        "command": "bazaar.conflict.takeBothThisFirst",
+        "title": "Bazaar: Resolve Using Both (This First)",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "bazaar.conflict.takeBothThisLast",
+        "title": "Bazaar: Resolve Using Both (This Last)",
+        "icon": "$(arrow-down)"
       },
       {
         "command": "bazaar.conflict.resolveAll",
@@ -261,7 +267,7 @@
       {
         "command": "bazaar.blame.toggle",
         "title": "Bazaar: Toggle Blame",
-        "icon": "$(annotate)"
+        "icon": "$(eye)"
       },
       {
         "command": "bazaar.blame.showCommit",
@@ -270,8 +276,48 @@
       },
       {
         "command": "bazaar.blame.showDiff",
-        "title": "Bazaar: Show Blame Diff",
+        "title": "Bazaar: Open Line Diff",
         "icon": "$(diff)"
+      },
+      {
+        "command": "bazaar.blame.openFileAtRevision",
+        "title": "Bazaar: Open Blame File at Revision",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "bazaar.blame.openLineChangesWithPreviousRevision",
+        "title": "Bazaar: Open Line Changes with Previous Revision",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "bazaar.blame.openLineChangesWithWorkingFile",
+        "title": "Bazaar: Open Line Changes with Working File",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "bazaar.blame.openChangesWithPreviousRevision",
+        "title": "Bazaar: Open Changes with Previous Revision",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "bazaar.blame.openChangesWithRevision",
+        "title": "Bazaar: Open Changes with Revision...",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "bazaar.blame.openChangesWithBranchOrTag",
+        "title": "Bazaar: Open Changes with Branch or Tag...",
+        "icon": "$(git-compare)"
+      },
+      {
+        "command": "bazaar.blame.quickShowLineCommit",
+        "title": "Bazaar: Quick Show Line Commit",
+        "icon": "$(git-commit)"
+      },
+      {
+        "command": "bazaar.blame.inspectLineCommitDetails",
+        "title": "Bazaar: Inspect Line Commit Details",
+        "icon": "$(info)"
       },
       {
         "command": "bazaar.branch.refresh",
@@ -285,7 +331,7 @@
       },
       {
         "command": "bazaar.branch.switch",
-        "title": "Bazaar: Switch Branch",
+        "title": "Bazaar: Switch Branch or Open Branch Worktree",
         "icon": "$(git-branch)"
       },
       {
@@ -366,11 +412,35 @@
         "icon": "$(refresh)"
       }
     ],
+    "keybindings": [
+      {
+        "command": "bazaar.blame.toggle",
+        "key": "ctrl+alt+b",
+        "mac": "cmd+alt+b",
+        "when": "editorTextFocus && resourceScheme == file"
+      },
+      {
+        "command": "bazaar.blame.quickShowLineCommit",
+        "key": "ctrl+alt+c",
+        "mac": "cmd+alt+c",
+        "when": "editorTextFocus && resourceScheme == file"
+      },
+      {
+        "command": "bazaar.blame.openLineChangesWithPreviousRevision",
+        "key": "ctrl+alt+shift+b",
+        "mac": "cmd+alt+shift+b",
+        "when": "editorTextFocus && resourceScheme == file"
+      }
+    ],
     "menus": {
       "scm/title": [
         {
           "command": "bazaar.refresh",
           "group": "navigation"
+        },
+        {
+          "command": "bazaar.blame.toggle",
+          "group": "navigation@1"
         },
         {
           "command": "bazaar.commit",
@@ -397,6 +467,10 @@
           "group": "4_conflict"
         },
         {
+          "command": "bazaar.merge.forgetPending",
+          "group": "4_conflict"
+        },
+        {
           "command": "bazaar.cleanTree.preview",
           "group": "5_danger"
         },
@@ -420,7 +494,7 @@
         },
         {
           "command": "bazaar.blame.toggle",
-          "group": "navigation"
+          "group": "navigation@0"
         },
         {
           "command": "bazaar.blame.showCommit",
@@ -429,6 +503,47 @@
         {
           "command": "bazaar.blame.showDiff",
           "group": "navigation"
+        },
+        {
+          "command": "bazaar.blame.openFileAtRevision",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "bazaar.blame.openLineChangesWithPreviousRevision",
+          "when": "resourceScheme == file",
+          "group": "bazaar@1"
+        },
+        {
+          "command": "bazaar.blame.openLineChangesWithWorkingFile",
+          "when": "resourceScheme == file",
+          "group": "bazaar@2"
+        },
+        {
+          "command": "bazaar.blame.openChangesWithPreviousRevision",
+          "when": "resourceScheme == file",
+          "group": "bazaar@3"
+        },
+        {
+          "command": "bazaar.blame.openChangesWithRevision",
+          "when": "resourceScheme == file",
+          "group": "bazaar@4"
+        },
+        {
+          "command": "bazaar.blame.openChangesWithBranchOrTag",
+          "when": "resourceScheme == file",
+          "group": "bazaar@5"
+        },
+        {
+          "command": "bazaar.blame.quickShowLineCommit",
+          "when": "resourceScheme == file",
+          "group": "bazaar@6"
+        },
+        {
+          "command": "bazaar.blame.inspectLineCommitDetails",
+          "when": "resourceScheme == file",
+          "group": "bazaar@7"
         }
       ],
       "view/title": [
@@ -584,18 +699,33 @@
           "group": "navigation"
         },
         {
+          "command": "bazaar.conflict.takeBothThisFirst",
+          "when": "scmProvider == bazaar && scmResourceGroup == conflicts",
+          "group": "navigation"
+        },
+        {
+          "command": "bazaar.conflict.takeBothThisLast",
+          "when": "scmProvider == bazaar && scmResourceGroup == conflicts",
+          "group": "navigation"
+        },
+        {
           "command": "bazaar.revert",
-          "when": "scmProvider == bazaar && scmResourceGroup != conflicts && scmResourceGroup != untracked",
+          "when": "scmProvider == bazaar && scmResourceGroup != conflicts && scmResourceGroup != untracked && scmResourceState != pendingMerge",
+          "group": "navigation"
+        },
+        {
+          "command": "bazaar.merge.forgetPending",
+          "when": "scmProvider == bazaar && scmResourceState == pendingMerge",
           "group": "navigation"
         },
         {
           "command": "bazaar.shelve.create",
-          "when": "scmProvider == bazaar && scmResourceGroup != conflicts && scmResourceGroup != untracked",
+          "when": "scmProvider == bazaar && scmResourceGroup != conflicts && scmResourceGroup != untracked && scmResourceState != pendingMerge",
           "group": "navigation"
         },
         {
           "command": "bazaar.openResourceDiff",
-          "when": "scmProvider == bazaar",
+          "when": "scmProvider == bazaar && scmResourceState != pendingMerge",
           "group": "navigation"
         }
       ]
@@ -605,11 +735,13 @@
     "compile": "tsc -p .",
     "watch": "tsc -watch -p .",
     "test": "vitest run",
+    "test:integration": "node ./integration/runTest.js",
     "package": "npm run compile && vsce package --no-dependencies --allow-missing-repository"
   },
   "devDependencies": {
     "@types/node": "^22.15.17",
     "@types/vscode": "^1.92.0",
+    "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^3.4.0",
     "typescript": "^5.8.3",
     "vitest": "^3.1.3"

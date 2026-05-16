@@ -34,6 +34,15 @@ describe('parseInfo', () => {
       checkoutRoot: undefined
     });
   });
+
+  it('extracts lightweight checkout roots from Bazaar info output', () => {
+    expect(parseInfo('Lightweight checkout (format: 2a)\nLocation:\n  light checkout root: .\n   checkout of branch: C:/repo/branch1\n    shared repository: C:/repo\n')).toEqual({
+      branchRoot: undefined,
+      repository: 'C:/repo',
+      checkoutRoot: '.',
+      checkoutOfBranch: 'C:/repo/branch1'
+    });
+  });
 });
 
 describe('parseAnnotations', () => {
