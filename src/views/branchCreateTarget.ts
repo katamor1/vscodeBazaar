@@ -10,8 +10,8 @@ export type BranchCreateTargetResult =
   | BranchCreateTarget
   | { warning: string };
 
-const INVALID_BRANCH_NAME_MESSAGE = 'Enter a simple branch folder name.';
-const DESTINATION_OUTSIDE_WORKSPACE_MESSAGE = 'The Bazaar branch destination must be outside the current workspace.';
+const INVALID_BRANCH_NAME_MESSAGE = '単純なブランチフォルダー名を入力してください。';
+const DESTINATION_OUTSIDE_WORKSPACE_MESSAGE = 'Bazaar ブランチの作成先は現在のワークスペース外である必要があります。';
 const WINDOWS_RESERVED_NAMES = new Set([
   'con',
   'prn',

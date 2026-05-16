@@ -1,7 +1,7 @@
 {
   "name": "vscode-bazaar",
   "displayName": "Bazaar SCM",
-  "description": "Bazaar SCM integration with status, history, graph, blame, branch, tag, shelf, conflict, and diff tools for Visual Studio Code.",
+  "description": "Visual Studio Code で Bazaar の状態、履歴、グラフ、blame、ブランチ、タグ、シェルブ、競合、差分を扱う SCM 拡張です。",
   "version": "0.2.8",
   "publisher": "local",
   "license": "UNLICENSED",
@@ -28,34 +28,34 @@
         "bazaar.cliPath": {
           "type": "string",
           "default": "bzr",
-          "description": "Path to the Bazaar command-line executable used by this extension."
+          "description": "この拡張が使用する Bazaar コマンドライン実行ファイルのパス。"
         },
         "bazaar.history.limit": {
           "type": "number",
           "default": 200,
           "minimum": 1,
-          "description": "Maximum number of Bazaar history revisions to load in history and graph views."
+          "description": "履歴ビューとグラフビューで読み込む Bazaar リビジョンの最大数。"
         },
         "bazaar.history.includeMerged": {
           "type": "boolean",
           "default": true,
-          "description": "Include merged revisions in Bazaar history and graph views."
+          "description": "Bazaar の履歴ビューとグラフビューにマージ済みリビジョンを含めます。"
         },
         "bazaar.unknown.expandDirectories": {
           "type": "boolean",
           "default": true,
-          "description": "Expand unknown Bazaar directories into file entries in the Source Control view."
+          "description": "未追跡の Bazaar ディレクトリをソース管理ビューでファイル項目に展開します。"
         },
         "bazaar.autoRefresh.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Automatically refresh Bazaar status after workspace file changes."
+          "description": "ワークスペース内のファイル変更後に Bazaar 状態を自動更新します。"
         },
         "bazaar.autoRefresh.debounceMs": {
           "type": "number",
           "default": 750,
           "minimum": 100,
-          "description": "Debounce time in milliseconds for automatic Bazaar refresh."
+          "description": "Bazaar 自動更新のデバウンス時間をミリ秒で指定します。"
         },
         "bazaar.blame.enabledFormat": {
           "type": "string",
@@ -64,12 +64,12 @@
             "revAuthorDate",
             "revAuthor"
           ],
-          "description": "Line-end format used by Bazaar blame decorations for the cursor line or selected range."
+          "description": "カーソル行または選択範囲に表示する Bazaar blame 装飾の行末形式。"
         },
         "bazaar.dangerousOperations.requireTypedConfirmation": {
           "type": "boolean",
           "default": true,
-          "description": "Require exact typed confirmation before destructive Bazaar operations such as clean-tree, uncommit, break-lock, and bulk conflict actions."
+          "description": "clean-tree、uncommit、break-lock、競合の一括操作など破壊的な Bazaar 操作の前に、正確な入力確認を要求します。"
         }
       }
     },
@@ -77,23 +77,23 @@
       "scm": [
         {
           "id": "bazaarHistory",
-          "name": "Bazaar History"
+          "name": "Bazaar 履歴"
         },
         {
           "id": "bazaarBranches",
-          "name": "Bazaar Branches"
+          "name": "Bazaar ブランチ"
         },
         {
           "id": "bazaarTags",
-          "name": "Bazaar Tags"
+          "name": "Bazaar タグ"
         },
         {
           "id": "bazaarShelves",
-          "name": "Bazaar Shelves"
+          "name": "Bazaar シェルブ"
         },
         {
           "id": "bazaarGraph",
-          "name": "Bazaar Graph",
+          "name": "Bazaar グラフ",
           "type": "webview"
         }
       ]
@@ -101,22 +101,22 @@
     "commands": [
       {
         "command": "bazaar.refresh",
-        "title": "Bazaar: Refresh",
+        "title": "Bazaar: 更新",
         "icon": "$(refresh)"
       },
       {
         "command": "bazaar.include",
-        "title": "Bazaar: Include",
+        "title": "Bazaar: コミット対象に含める",
         "icon": "$(add)"
       },
       {
         "command": "bazaar.uninclude",
-        "title": "Bazaar: Uninclude",
+        "title": "Bazaar: コミット対象から外す",
         "icon": "$(remove)"
       },
       {
         "command": "bazaar.includeAll",
-        "title": "Bazaar: Include All",
+        "title": "Bazaar: すべてコミット対象に含める",
         "icon": "$(list-selection)"
       },
       {
@@ -126,17 +126,17 @@
       },
       {
         "command": "bazaar.revertAll",
-        "title": "Bazaar: Revert All Changes and Merge State",
+        "title": "Bazaar: すべての変更と Merge 状態を Revert",
         "icon": "$(discard)"
       },
       {
         "command": "bazaar.merge.forgetPending",
-        "title": "Bazaar: Forget Pending Merge State",
+        "title": "Bazaar: Pending Merge 状態をクリア",
         "icon": "$(git-pull-request-closed)"
       },
       {
         "command": "bazaar.commit",
-        "title": "Bazaar: Commit Included Changes",
+        "title": "Bazaar: コミット対象の変更をコミット",
         "icon": "$(check)"
       },
       {
@@ -151,264 +151,264 @@
       },
       {
         "command": "bazaar.resolve",
-        "title": "Bazaar: Resolve Conflict",
+        "title": "Bazaar: 競合を解決済みにする",
         "icon": "$(check-all)"
       },
       {
         "command": "bazaar.resolveAuto",
-        "title": "Bazaar: Auto Resolve Conflicts"
+        "title": "Bazaar: 競合を自動解決"
       },
       {
         "command": "bazaar.conflict.openMerge",
-        "title": "Bazaar: Open Conflict in Merge Editor",
+        "title": "Bazaar: 競合をマージエディターで開く",
         "icon": "$(merge)"
       },
       {
         "command": "bazaar.conflict.takeThis",
-        "title": "Bazaar: Resolve Using This",
+        "title": "Bazaar: こちら側を使って解決",
         "icon": "$(arrow-left)"
       },
       {
         "command": "bazaar.conflict.takeOther",
-        "title": "Bazaar: Resolve Using Other",
+        "title": "Bazaar: 相手側を使って解決",
         "icon": "$(arrow-right)"
       },
       {
         "command": "bazaar.conflict.takeBothThisFirst",
-        "title": "Bazaar: Resolve Using Both (This First)",
+        "title": "Bazaar: 両方を使って解決 (こちら側を先)",
         "icon": "$(arrow-up)"
       },
       {
         "command": "bazaar.conflict.takeBothThisLast",
-        "title": "Bazaar: Resolve Using Both (This Last)",
+        "title": "Bazaar: 両方を使って解決 (こちら側を後)",
         "icon": "$(arrow-down)"
       },
       {
         "command": "bazaar.conflict.resolveAll",
-        "title": "Bazaar: Resolve All Conflicts"
+        "title": "Bazaar: すべての競合を解決"
       },
       {
         "command": "bazaar.cleanTree.preview",
-        "title": "Bazaar: Preview Clean Tree",
+        "title": "Bazaar: clean-tree をプレビュー",
         "icon": "$(preview)"
       },
       {
         "command": "bazaar.cleanTree.run",
-        "title": "Bazaar: Run Clean Tree",
+        "title": "Bazaar: clean-tree を実行",
         "icon": "$(trash)"
       },
       {
         "command": "bazaar.uncommit.preview",
-        "title": "Bazaar: Preview Uncommit",
+        "title": "Bazaar: uncommit をプレビュー",
         "icon": "$(preview)"
       },
       {
         "command": "bazaar.uncommit.run",
-        "title": "Bazaar: Run Uncommit",
+        "title": "Bazaar: uncommit を実行",
         "icon": "$(debug-reverse-continue)"
       },
       {
         "command": "bazaar.lock.break",
-        "title": "Bazaar: Break Lock",
+        "title": "Bazaar: ロックを解除",
         "icon": "$(unlock)"
       },
       {
         "command": "bazaar.doctor",
-        "title": "Bazaar: Doctor",
+        "title": "Bazaar: 診断",
         "icon": "$(tools)"
       },
       {
         "command": "bazaar.openOutput",
-        "title": "Bazaar: Open Output"
+        "title": "Bazaar: 出力を開く"
       },
       {
         "command": "bazaar.openResourceDiff",
-        "title": "Bazaar: Open Changes"
+        "title": "Bazaar: 変更を開く"
       },
       {
         "command": "bazaar.history.refresh",
-        "title": "Bazaar: Refresh History",
+        "title": "Bazaar: 履歴を更新",
         "icon": "$(refresh)"
       },
       {
         "command": "bazaar.history.search",
-        "title": "Bazaar: Search History",
+        "title": "Bazaar: 履歴を検索",
         "icon": "$(search)"
       },
       {
         "command": "bazaar.history.clearFileFilter",
-        "title": "Bazaar: Clear File History Filter",
+        "title": "Bazaar: ファイル履歴フィルターをクリア",
         "icon": "$(clear-all)"
       },
       {
         "command": "bazaar.history.showFileHistory",
-        "title": "Bazaar: Show File History",
+        "title": "Bazaar: ファイル履歴を表示",
         "icon": "$(history)"
       },
       {
         "command": "bazaar.history.showCommit",
-        "title": "Bazaar: Show Commit"
+        "title": "Bazaar: コミットを表示"
       },
       {
         "command": "bazaar.history.showCommitDiff",
-        "title": "Bazaar: Show Commit Diff",
+        "title": "Bazaar: コミット差分を表示",
         "icon": "$(diff)"
       },
       {
         "command": "bazaar.history.copyRevisionId",
-        "title": "Bazaar: Copy Revision Id",
+        "title": "Bazaar: リビジョン ID をコピー",
         "icon": "$(copy)"
       },
       {
         "command": "bazaar.history.openFileAtRevision",
-        "title": "Bazaar: Open File at Revision",
+        "title": "Bazaar: 指定リビジョンのファイルを開く",
         "icon": "$(go-to-file)"
       },
       {
         "command": "bazaar.blame.toggle",
-        "title": "Bazaar: Toggle Blame",
+        "title": "Bazaar: Blame 表示を切り替え",
         "icon": "$(eye)"
       },
       {
         "command": "bazaar.blame.showCommit",
-        "title": "Bazaar: Show Blame Commit",
+        "title": "Bazaar: Blame のコミットを表示",
         "icon": "$(git-commit)"
       },
       {
         "command": "bazaar.blame.showDiff",
-        "title": "Bazaar: Open Line Diff",
+        "title": "Bazaar: 行差分を開く",
         "icon": "$(diff)"
       },
       {
         "command": "bazaar.blame.openFileAtRevision",
-        "title": "Bazaar: Open Blame File at Revision",
+        "title": "Bazaar: Blame のリビジョンファイルを開く",
         "icon": "$(go-to-file)"
       },
       {
         "command": "bazaar.blame.openLineChangesWithPreviousRevision",
-        "title": "Bazaar: Open Line Changes with Previous Revision",
+        "title": "Bazaar: 前リビジョンとの差分を行で開く",
         "icon": "$(diff)"
       },
       {
         "command": "bazaar.blame.openLineChangesWithWorkingFile",
-        "title": "Bazaar: Open Line Changes with Working File",
+        "title": "Bazaar: 作業中ファイルとの差分を行で開く",
         "icon": "$(diff)"
       },
       {
         "command": "bazaar.blame.openChangesWithPreviousRevision",
-        "title": "Bazaar: Open Changes with Previous Revision",
+        "title": "Bazaar: 前リビジョンとの差分を開く",
         "icon": "$(diff)"
       },
       {
         "command": "bazaar.blame.openChangesWithRevision",
-        "title": "Bazaar: Open Changes with Revision...",
+        "title": "Bazaar: リビジョンとの差分を開く...",
         "icon": "$(diff)"
       },
       {
         "command": "bazaar.blame.openChangesWithBranchOrTag",
-        "title": "Bazaar: Open Changes with Branch or Tag...",
+        "title": "Bazaar: ブランチまたはタグとの差分を開く...",
         "icon": "$(git-compare)"
       },
       {
         "command": "bazaar.blame.quickShowLineCommit",
-        "title": "Bazaar: Quick Show Line Commit",
+        "title": "Bazaar: 現在行のコミットをクイック表示",
         "icon": "$(git-commit)"
       },
       {
         "command": "bazaar.blame.inspectLineCommitDetails",
-        "title": "Bazaar: Inspect Line Commit Details",
+        "title": "Bazaar: 現在行のコミット詳細を調査",
         "icon": "$(info)"
       },
       {
         "command": "bazaar.branch.refresh",
-        "title": "Bazaar: Refresh Branches",
+        "title": "Bazaar: ブランチを更新",
         "icon": "$(refresh)"
       },
       {
         "command": "bazaar.branch.create",
-        "title": "Bazaar: Create Branch",
+        "title": "Bazaar: ブランチを作成",
         "icon": "$(git-branch-create)"
       },
       {
         "command": "bazaar.branch.switch",
-        "title": "Bazaar: Switch Branch or Open Branch Worktree",
+        "title": "Bazaar: ブランチを切り替え、または作業ツリーを開く",
         "icon": "$(git-branch)"
       },
       {
         "command": "bazaar.branch.switchForce",
-        "title": "Bazaar: Force Switch Branch"
+        "title": "Bazaar: ブランチを強制切替"
       },
       {
         "command": "bazaar.branch.remove",
-        "title": "Bazaar: Remove Branch",
+        "title": "Bazaar: ブランチを削除",
         "icon": "$(trash)"
       },
       {
         "command": "bazaar.branch.removeForce",
-        "title": "Bazaar: Force Remove Branch"
+        "title": "Bazaar: ブランチを強制削除"
       },
       {
         "command": "bazaar.tag.refresh",
-        "title": "Bazaar: Refresh Tags",
+        "title": "Bazaar: タグを更新",
         "icon": "$(refresh)"
       },
       {
         "command": "bazaar.tag.create",
-        "title": "Bazaar: Create Tag",
+        "title": "Bazaar: タグを作成",
         "icon": "$(tag-add)"
       },
       {
         "command": "bazaar.tag.delete",
-        "title": "Bazaar: Delete Tag",
+        "title": "Bazaar: タグを削除",
         "icon": "$(trash)"
       },
       {
         "command": "bazaar.tag.forceMove",
-        "title": "Bazaar: Force Move Tag"
+        "title": "Bazaar: タグを強制移動"
       },
       {
         "command": "bazaar.shelve.refresh",
-        "title": "Bazaar: Refresh Shelves",
+        "title": "Bazaar: シェルブを更新",
         "icon": "$(refresh)"
       },
       {
         "command": "bazaar.shelve.create",
-        "title": "Bazaar: Shelve Selected File",
+        "title": "Bazaar: 選択ファイルをシェルブ",
         "icon": "$(archive)"
       },
       {
         "command": "bazaar.shelve.createAll",
-        "title": "Bazaar: Shelve All Changes",
+        "title": "Bazaar: すべての変更をシェルブ",
         "icon": "$(archive)"
       },
       {
         "command": "bazaar.shelve.preview",
-        "title": "Bazaar: Preview Shelf",
+        "title": "Bazaar: シェルブをプレビュー",
         "icon": "$(preview)"
       },
       {
         "command": "bazaar.shelve.apply",
-        "title": "Bazaar: Apply Shelf",
+        "title": "Bazaar: シェルブを適用",
         "icon": "$(check)"
       },
       {
         "command": "bazaar.shelve.keep",
-        "title": "Bazaar: Apply and Keep Shelf",
+        "title": "Bazaar: シェルブを適用して保持",
         "icon": "$(pinned)"
       },
       {
         "command": "bazaar.shelve.delete",
-        "title": "Bazaar: Delete Shelf",
+        "title": "Bazaar: シェルブを削除",
         "icon": "$(trash)"
       },
       {
         "command": "bazaar.graph.open",
-        "title": "Bazaar: Open Graph",
+        "title": "Bazaar: グラフを開く",
         "icon": "$(git-merge)"
       },
       {
         "command": "bazaar.graph.refresh",
-        "title": "Bazaar: Refresh Graph",
+        "title": "Bazaar: グラフを更新",
         "icon": "$(refresh)"
       }
     ],

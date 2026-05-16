@@ -21,14 +21,14 @@ export class BazaarShelveView implements vscode.TreeDataProvider<ShelfNode>, vsc
 
   getTreeItem(node: ShelfNode): vscode.TreeItem {
     const item = new vscode.TreeItem(
-      `${node.shelf.id}: ${node.shelf.message || '(no message)'}`,
+      `${node.shelf.id}: ${node.shelf.message || '(メッセージなし)'}`,
       vscode.TreeItemCollapsibleState.None
     );
     item.iconPath = new vscode.ThemeIcon('archive');
     item.contextValue = 'bazaarShelf';
     item.command = {
       command: 'bazaar.shelve.preview',
-      title: 'Preview Bazaar Shelf',
+      title: 'Bazaar シェルブをプレビュー',
       arguments: [node.shelf]
     };
     return item;
@@ -46,10 +46,10 @@ export class BazaarShelveView implements vscode.TreeDataProvider<ShelfNode>, vsc
   async create(resource?: { resourceUri?: vscode.Uri }): Promise<void> {
     const targetPath = this.pathFromResource(resource);
     if (!targetPath) {
-      vscode.window.showWarningMessage('Open or select a file inside the Bazaar tree first.');
+      vscode.window.showWarningMessage('先に Bazaar ツリー内のファイルを開くか選択してください。');
       return;
     }
-    const message = await this.shelfMessage('Shelve Bazaar changes');
+    const message = await this.shelfMessage('Bazaar 変更をシェルブ');
     if (message === undefined) {
       return;
     }
@@ -59,7 +59,7 @@ export class BazaarShelveView implements vscode.TreeDataProvider<ShelfNode>, vsc
   }
 
   async createAll(): Promise<void> {
-    const message = await this.shelfMessage('Shelve all Bazaar changes');
+    const message = await this.shelfMessage('すべての Bazaar 変更をシェルブ');
     if (message === undefined) {
       return;
     }
@@ -73,12 +73,12 @@ export class BazaarShelveView implements vscode.TreeDataProvider<ShelfNode>, vsc
       return;
     }
     const diff = await this.client.unshelvePreview(shelf.id);
-    const document = await this.generatedProvider.openDocument(`Bazaar Shelf ${shelf.id} Preview`, diff, 'diff');
+    const document = await this.generatedProvider.openDocument(`Bazaar シェルブ ${shelf.id} プレビュー`, diff, 'diff');
     await vscode.window.showTextDocument(document, { preview: true });
   }
 
   async apply(shelf?: BazaarShelf): Promise<void> {
-    if (!shelf || !(await this.confirmShelf('Apply Bazaar shelf', shelf))) {
+    if (!shelf || !(await this.confirmShelf('Bazaar シェルブを適用', shelf))) {
       return;
     }
     await this.client.unshelveApply(shelf.id);
@@ -87,7 +87,7 @@ export class BazaarShelveView implements vscode.TreeDataProvider<ShelfNode>, vsc
   }
 
   async keep(shelf?: BazaarShelf): Promise<void> {
-    if (!shelf || !(await this.confirmShelf('Apply and keep Bazaar shelf', shelf))) {
+    if (!shelf || !(await this.confirmShelf('Bazaar シェルブを適用して保持', shelf))) {
       return;
     }
     await this.client.unshelveKeep(shelf.id);
@@ -96,7 +96,7 @@ export class BazaarShelveView implements vscode.TreeDataProvider<ShelfNode>, vsc
   }
 
   async delete(shelf?: BazaarShelf): Promise<void> {
-    if (!shelf || !(await this.confirmShelf('Delete Bazaar shelf', shelf))) {
+    if (!shelf || !(await this.confirmShelf('Bazaar シェルブを削除', shelf))) {
       return;
     }
     await this.client.unshelveDelete(shelf.id);
@@ -110,7 +110,7 @@ export class BazaarShelveView implements vscode.TreeDataProvider<ShelfNode>, vsc
   private async shelfMessage(title: string): Promise<string | undefined> {
     const message = await vscode.window.showInputBox({
       title,
-      prompt: 'Shelf message',
+      prompt: 'シェルブメッセージ',
       value: ''
     });
     return message === undefined ? undefined : message.trim();
@@ -120,7 +120,7 @@ export class BazaarShelveView implements vscode.TreeDataProvider<ShelfNode>, vsc
     return confirmDangerousOperation({
       id: `shelf-${shelf.id}`,
       label,
-      target: `${shelf.id}: ${shelf.message || '(no message)'}`
+      target: `${shelf.id}: ${shelf.message || '(メッセージなし)'}`
     });
   }
 

@@ -1,84 +1,84 @@
 # Bazaar SCM for VS Code
 
-Local VS Code extension that brings a Git-like Source Control experience to Bazaar working trees.
+Bazaar の作業ツリーを VS Code のソース管理ビューから扱うためのローカル拡張です。Git に近い操作感で、状態確認、履歴、差分、blame、ブランチ、タグ、シェルブ、競合解決をまとめて扱えます。
 
-## Features
+## 機能
 
-- Source Control view for Bazaar changes, split into `Included`, `Changes`, `Untracked`, and `Conflicts`.
-- Pseudo-staging workflow: include files first, then commit only those files through an explicit Bazaar file list.
-- Unknown directory expansion, so generated folder trees can be reviewed and included file-by-file.
-- VS Code diff editor integration for working-tree changes, history changes, and blame context-menu changes.
-- History, Branches, Tags, Shelves, and Graph views under Source Control.
-- File history, history search, commit details, changed paths, copy revision id, and file-at-revision opening.
-- Cursor/selection-scoped blame annotations with hover details.
-- GitLens-style blame context actions for line/file changes against previous revisions, working files, selected revisions, branches, and tags.
-- Shelve/unshelve preview, apply, keep, and delete workflows.
-- Conflict helpers for merge-editor opening plus one-click use-this, use-other, use-both-this-first, use-both-this-last, resolve selected, resolve all, and Bazaar pending-merge cleanup.
-- Branch creation uses a simple folder name and creates the new branch outside the current workspace, usually as a sibling of the active tree. Switch Branch opens sibling working-tree branches in the same VS Code window instead of running `bzr switch` inside the current tree.
-- Preview-first dangerous operations for clean-tree, uncommit, and break-lock.
-- Defensive degraded mode: without a workspace or Bazaar tree, contributed commands show a short unavailable message instead of failing as command-not-found.
+- Bazaar の変更をソース管理ビューに表示し、`コミット対象`、`変更`、`未追跡`、`競合` に分けて管理します。
+- 疑似ステージング機能により、先にファイルをコミット対象へ入れ、明示的な Bazaar ファイルリストでコミットします。
+- 未追跡ディレクトリを展開し、生成されたフォルダツリーもファイル単位で確認・追加できます。
+- 作業ツリー差分、履歴差分、blame のコンテキスト操作を VS Code の差分エディターで開きます。
+- ソース管理ビュー配下に履歴、ブランチ、タグ、シェルブ、グラフの各ビューを追加します。
+- ファイル履歴、履歴検索、コミット詳細、変更パス、リビジョン ID のコピー、指定リビジョンのファイル表示に対応します。
+- カーソル行または選択範囲の blame 注釈を表示し、ホバーで詳細を確認できます。
+- GitLens 風の blame コンテキスト操作として、前リビジョン、作業中ファイル、任意リビジョン、ブランチ、タグとの差分を開けます。
+- シェルブのプレビュー、適用、保持したまま適用、削除に対応します。
+- 競合ファイルをマージエディターで開く操作、こちら側/相手側/両方を使う解決操作、選択競合の解決、全競合の解決、Bazaar の pending merge 状態のクリアを提供します。
+- ブランチ作成では単純なフォルダ名を入力し、通常は現在の作業ツリーの兄弟フォルダとしてブランチを作成します。ブランチ切替では、兄弟の作業ツリーブランチを検出した場合、現在のツリー内で `bzr switch` を実行せず、同じ VS Code ウィンドウでそのフォルダを開きます。
+- `clean-tree`、`uncommit`、`break-lock` など危険な操作は、先にプレビューしてから実行します。
+- ワークスペースや Bazaar ツリーがない場合でも、コマンド未登録エラーにせず、利用不可メッセージを表示して安全に劣化します。
 
-## Requirements
+## 必要条件
 
-Install Bazaar CLI and make it available as `bzr`, or set `bazaar.cliPath` to the executable path.
+Bazaar CLI をインストールし、`bzr` として実行できるようにしてください。別のパスにある場合は `bazaar.cliPath` に実行ファイルパスを設定します。
 
-This extension targets one Bazaar root in the opened workspace. Shared repositories are supported for branch listing and operations when Bazaar can discover them from the current tree.
+この拡張は、開いているワークスペース内の 1 つの Bazaar ルートを対象にします。共有リポジトリは、現在のツリーから Bazaar が検出できる範囲でブランチ一覧と操作に対応します。
 
-## Commands
+## コマンド
 
-Main commands:
+主なコマンド:
 
-- `Bazaar: Refresh`
-- `Bazaar: Commit Included Changes`
+- `Bazaar: 更新`
+- `Bazaar: コミット対象の変更をコミット`
 - `Bazaar: Pull`
 - `Bazaar: Push`
-- `Bazaar: Forget Pending Merge State`
-- `Bazaar: Open Output`
-- `Bazaar: Show File History`
-- `Bazaar: Toggle Blame`
-- `Bazaar: Quick Show Line Commit`
-- `Bazaar: Open Line Changes with Previous Revision`
-- `Bazaar: Open Line Changes with Working File`
-- `Bazaar: Open Changes with Previous Revision`
-- `Bazaar: Open Changes with Revision...`
-- `Bazaar: Open Changes with Branch or Tag...`
-- `Bazaar: Inspect Line Commit Details`
+- `Bazaar: Pending Merge 状態をクリア`
+- `Bazaar: 出力を開く`
+- `Bazaar: ファイル履歴を表示`
+- `Bazaar: Blame 表示を切り替え`
+- `Bazaar: 現在行のコミットをクイック表示`
+- `Bazaar: 前リビジョンとの差分を行で開く`
+- `Bazaar: 作業中ファイルとの差分を行で開く`
+- `Bazaar: 前リビジョンとの差分を開く`
+- `Bazaar: リビジョンとの差分を開く...`
+- `Bazaar: ブランチまたはタグとの差分を開く...`
+- `Bazaar: 現在行のコミット詳細を調査`
 
-Most file, branch, tag, shelf, conflict, history, and graph actions are also available from their view title buttons or context menus.
+ファイル、ブランチ、タグ、シェルブ、競合、履歴、グラフの多くの操作は、各ビューのタイトルボタンやコンテキストメニューからも実行できます。
 
-## Keybindings
+## キーバインド
 
-Default shortcuts are intentionally limited to the most common editor actions:
+既定ショートカットは、よく使うエディター操作だけに絞っています。
 
-| Command | Windows/Linux | macOS |
+| コマンド | Windows/Linux | macOS |
 | --- | --- | --- |
-| Toggle Blame | `Ctrl+Alt+B` | `Cmd+Alt+B` |
-| Quick Show Line Commit | `Ctrl+Alt+C` | `Cmd+Alt+C` |
-| Open Line Changes with Previous Revision | `Ctrl+Alt+Shift+B` | `Cmd+Alt+Shift+B` |
+| Blame 表示を切り替え | `Ctrl+Alt+B` | `Cmd+Alt+B` |
+| 現在行のコミットをクイック表示 | `Ctrl+Alt+C` | `Cmd+Alt+C` |
+| 前リビジョンとの差分を行で開く | `Ctrl+Alt+Shift+B` | `Cmd+Alt+Shift+B` |
 
-All default keybindings require a file editor focus.
+すべての既定キーバインドは、ファイルエディターにフォーカスがある場合だけ有効です。
 
-## Settings
+## 設定
 
-- `bazaar.cliPath`: path to the Bazaar command-line executable.
-- `bazaar.history.limit`: maximum revisions loaded for history and graph views.
-- `bazaar.history.includeMerged`: include merged revisions in history and graph views.
-- `bazaar.unknown.expandDirectories`: expand unknown directories into file entries in Source Control.
-- `bazaar.autoRefresh.enabled`: refresh Bazaar status after workspace file changes.
-- `bazaar.autoRefresh.debounceMs`: debounce time for automatic refresh.
-- `bazaar.blame.enabledFormat`: line-end blame decoration format for the cursor line or selected range.
-- `bazaar.dangerousOperations.requireTypedConfirmation`: require exact typed confirmation before destructive operations.
+- `bazaar.cliPath`: Bazaar コマンドライン実行ファイルのパス。
+- `bazaar.history.limit`: 履歴ビューとグラフビューで読み込む最大リビジョン数。
+- `bazaar.history.includeMerged`: 履歴ビューとグラフビューにマージ済みリビジョンを含めるか。
+- `bazaar.unknown.expandDirectories`: 未追跡ディレクトリをソース管理ビューでファイル単位に展開するか。
+- `bazaar.autoRefresh.enabled`: ワークスペース内のファイル変更後に Bazaar 状態を自動更新するか。
+- `bazaar.autoRefresh.debounceMs`: 自動更新のデバウンス時間。
+- `bazaar.blame.enabledFormat`: カーソル行または選択範囲の行末 blame 装飾形式。
+- `bazaar.dangerousOperations.requireTypedConfirmation`: 破壊的操作の前に、確認フレーズの正確な入力を要求するか。
 
-## Safety And Degraded Mode
+## 安全性と劣化動作
 
-- Revision inputs are validated before Bazaar commands run, so malformed history, graph, and blame actions fail with a short warning instead of passing invalid revisions to `bzr`.
-- Historical file contents open as read-only virtual documents.
-- Dangerous operations such as clean-tree, uncommit, break-lock, all-revert, resolve-all, and shelf deletion use confirmation prompts, with typed confirmation when enabled.
-- Without an active Bazaar tree, or when Bazaar metadata is corrupt, commands degrade to unavailable messages, disabled actions, or output-channel diagnostics instead of attempting unsafe repairs.
+- Bazaar コマンドを実行する前にリビジョン入力を検証します。不正な履歴、グラフ、blame 操作は、無効なリビジョンを `bzr` に渡さず、短い警告で止めます。
+- 履歴上のファイル内容は読み取り専用の仮想ドキュメントとして開きます。
+- `clean-tree`、`uncommit`、`break-lock`、全変更の revert、全競合の解決、シェルブ削除などの危険な操作は確認ダイアログを使い、設定が有効なら確認フレーズの入力も要求します。
+- Bazaar ツリーがない場合や Bazaar メタデータが壊れている場合は、修復を試みず、利用不可メッセージ、無効化された操作、出力チャンネルの診断へ安全に劣化します。
 
-## Local Install
+## ローカルインストール
 
-Build and package:
+ビルドとパッケージ作成:
 
 ```powershell
 npm install
@@ -87,30 +87,30 @@ npm run compile
 npm run package
 ```
 
-Install the generated `.vsix` from VS Code with `Extensions: Install from VSIX...`.
+生成された `.vsix` は、VS Code の `拡張機能: VSIX からのインストール...` からインストールします。
 
-## Known Limitations
+## 既知の制限
 
-- Bazaar itself is still the source of truth. If the local `.bzr` metadata is corrupt, this extension degrades safely but does not repair the Bazaar tree.
-- The extension is scoped to one active Bazaar root per opened workspace.
-- `Included` is extension-local state, not a Bazaar staging area.
-- Branch discovery checks Bazaar metadata, the active checkout sibling folder, and branch roots created by this extension. `Create Branch` never creates a child folder inside the active workspace; `Switch Branch` moves the VS Code window to another working-tree branch when one is detected, and falls back to `bzr switch` for lightweight checkout targets.
-- Line change commands open a file diff and reveal the blamed line area; they do not implement a separate line-only diff UI.
-- Integration tests currently cover activation and command availability, not full UI click flows.
+- Bazaar 本体が常に真実の情報源です。ローカルの `.bzr` メタデータが壊れている場合、この拡張は安全に劣化しますが Bazaar ツリーの修復は行いません。
+- 拡張は、開いているワークスペース内の 1 つの Bazaar ルートを対象にします。
+- `コミット対象` は拡張内のローカル状態であり、Bazaar のステージング領域ではありません。
+- ブランチ検出は Bazaar メタデータ、現在の checkout の兄弟フォルダ、この拡張で作成したブランチルートを確認します。`Bazaar: ブランチを作成` は現在のワークスペース内に子フォルダを作らず、`Bazaar: ブランチを切り替え、または作業ツリーを開く` は別の作業ツリーブランチを検出した場合に VS Code ウィンドウをその場所へ移動し、lightweight checkout の切替先では `bzr switch` にフォールバックします。
+- 行差分コマンドはファイル差分を開いて blame 対象行付近を表示します。行だけの専用差分 UI は実装していません。
+- 統合テストは現在、拡張の起動とコマンド登録を確認しており、完全な UI クリック操作までは網羅していません。
 
-## Troubleshooting
+## トラブルシューティング
 
-- Open `Bazaar: Open Output` for command output and fallback diagnostics.
-- If Bazaar is not on `PATH`, set `bazaar.cliPath`.
-- If commands report that no Bazaar working tree is active, open a folder inside a Bazaar checkout or check that `bzr root` works in that folder.
-- If `Bazaar Pull` reports that branches have diverged, Bazaar will not auto-merge like Git. The extension offers `Merge Parent`, `Show Missing`, and `Open Output`; choose `Merge Parent` to run `bzr merge`, then resolve conflicts if any and commit the merge.
-- If you reverted merge file changes but Bazaar still thinks a merge is pending, run `Bazaar: Forget Pending Merge State`. It runs `bzr revert --forget-merges`, clearing the pending merge parents without changing file contents. Use `Bazaar: Revert All Changes and Merge State` when you want to abort both file changes and the pending merge state.
-- If history or graph cannot load because Bazaar raises an internal recursion error, command actions should remain disabled or show short warnings instead of passing invalid revisions to `bzr`.
-- If a diff opens blank for a historical file, check the output channel for the `bzr cat -r` error that was captured for that virtual document.
+- コマンド出力やフォールバック診断は `Bazaar: 出力を開く` で確認します。
+- Bazaar が `PATH` にない場合は、`bazaar.cliPath` を設定してください。
+- Bazaar 作業ツリーが有効ではないと表示される場合は、Bazaar checkout 内のフォルダを開くか、そのフォルダで `bzr root` が動くか確認してください。
+- `Bazaar: Pull` でブランチ分岐が報告された場合、Bazaar は Git のような自動マージを行いません。この拡張は `親ブランチをマージ`、`未取得/未反映を表示`、`出力を開く` を提示します。`親ブランチをマージ` を選ぶと `bzr merge` を実行するので、必要に応じて競合を解決してからマージコミットしてください。
+- マージ中のファイル変更を revert しても Bazaar が pending merge と認識し続ける場合は、`Bazaar: Pending Merge 状態をクリア` を実行してください。これは `bzr revert --forget-merges` を実行し、ファイル内容を変更せず pending merge の親情報を消します。ファイル変更と pending merge 状態の両方を中止したい場合は `Bazaar: すべての変更と Merge 状態を Revert` を使います。
+- Bazaar の内部再帰エラーにより履歴やグラフを読み込めない場合、コマンド操作は無効化されるか、不正なリビジョンを `bzr` に渡す前に短い警告で止まります。
+- 履歴ファイルの差分が空で開く場合は、その仮想ドキュメントで捕捉された `bzr cat -r` エラーを出力チャンネルで確認してください。
 
-## Verification
+## 検証
 
-Recommended release checks:
+リリース前の推奨チェック:
 
 ```powershell
 npm run compile
@@ -120,10 +120,10 @@ npm audit --omit=dev
 npm run package
 ```
 
-For this local VSIX release line, `npm run package` should generate `vscode-bazaar-0.2.8.vsix`.
+このローカル VSIX リリースラインでは、`npm run package` により `vscode-bazaar-0.2.8.vsix` が生成されます。
 
-## Notes
+## 補足
 
-Bazaar does not have Git's staged index. The `Included` group is maintained by the extension and used to pass an explicit file list to `bzr commit`.
+Bazaar には Git の staged index がありません。`コミット対象` グループは拡張が管理する状態で、`bzr commit` に渡す明示的なファイルリストとして使われます。
 
-`clean-tree`, `uncommit`, `break-lock`, resolve-all, all-revert, and shelf deletion are intentionally gated by modal and typed confirmation when `bazaar.dangerousOperations.requireTypedConfirmation` is enabled.
+`clean-tree`、`uncommit`、`break-lock`、全競合の解決、全変更の revert、シェルブ削除は、`bazaar.dangerousOperations.requireTypedConfirmation` が有効な場合、モーダル確認と入力確認で意図的に保護されています。

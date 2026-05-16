@@ -43,6 +43,13 @@ describe('parseInfo', () => {
       checkoutOfBranch: 'C:/repo/branch1'
     });
   });
+
+  it('extracts related parent and push branches from Bazaar info output', () => {
+    expect(parseInfo('Repository tree (format: 2a)\nRelated branches:\n    push branch: C:/repo/branch1\n  parent branch: ../trunk\n')).toEqual({
+      pushBranch: 'C:/repo/branch1',
+      parentBranch: '../trunk'
+    });
+  });
 });
 
 describe('parseAnnotations', () => {

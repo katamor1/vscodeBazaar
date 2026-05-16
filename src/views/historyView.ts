@@ -9,6 +9,7 @@ import {
   type HistoryCommitDiffPlan,
   createHistoryCommitDiffPlan
 } from './historyDiff';
+import { loadBazaarRevisionsWithFallback } from './historyFallback';
 import { resolveFileHistoryTarget } from './historyFile';
 import {
   resolveRevisionCommandTarget,
@@ -49,7 +50,7 @@ export class BazaarHistoryView implements vscode.TreeDataProvider<HistoryNode>, 
       item.contextValue = 'bazaarRevision';
       item.command = {
         command: 'bazaar.history.showCommit',
-        title: 'Show Bazaar Commit',
+        title: 'Bazaar コミットを表示',
         arguments: [node.revision]
       };
       return item;
@@ -81,18 +82,18 @@ export class BazaarHistoryView implements vscode.TreeDataProvider<HistoryNode>, 
         icon: 'key',
         command: {
           command: 'bazaar.history.copyRevisionId',
-          title: 'Copy Bazaar Revision Id',
+          title: 'Bazaar リビジョン ID をコピー',
           arguments: [revision]
         }
       },
-      { type: 'detail', label: `Branch: ${revision.branchNick || '(unknown)'}`, icon: 'git-branch' }
+      { type: 'detail', label: `ブランチ: ${revision.branchNick || '(不明)'}`, icon: 'git-branch' }
     ];
 
     if (revision.tags.length > 0) {
-      details.push({ type: 'detail', label: `Tags: ${revision.tags.join(', ')}`, icon: 'tag' });
+      details.push({ type: 'detail', label: `タグ: ${revision.tags.join(', ')}`, icon: 'tag' });
     }
     if (revision.parentIds.length > 0) {
-      details.push({ type: 'detail', label: `Parents: ${revision.parentIds.join(', ')}`, icon: 'references' });
+      details.push({ type: 'detail', label: `親: ${revision.parentIds.join(', ')}`, icon: 'references' });
     }
     for (const changedPath of revision.changedPaths ?? []) {
       details.push({
@@ -101,28 +102,28 @@ export class BazaarHistoryView implements vscode.TreeDataProvider<HistoryNode>, 
         icon: 'file',
         command: {
           command: 'bazaar.history.showCommitDiff',
-          title: 'Show Bazaar Commit Diff',
+          title: 'Bazaar コミット差分を表示',
           arguments: [revision, changedPath]
         }
       });
       details.push({
         type: 'detail',
-        label: `Open ${changedPath} at ${revisionDisplayLabel(revision)}`,
+        label: `${changedPath} を ${revisionDisplayLabel(revision)} で開く`,
         icon: 'go-to-file',
         command: {
           command: 'bazaar.history.openFileAtRevision',
-          title: 'Open Bazaar File At Revision',
+          title: '指定リビジョンの Bazaar ファイルを開く',
           arguments: [revision, changedPath]
         }
       });
     }
     details.push({
       type: 'detail',
-      label: 'Show commit diff',
+      label: 'コミット差分を表示',
       icon: 'diff',
       command: {
         command: 'bazaar.history.showCommitDiff',
-        title: 'Show Bazaar Commit Diff',
+        title: 'Bazaar コミット差分を表示',
         arguments: [revision]
       }
     });
@@ -135,16 +136,21 @@ export class BazaarHistoryView implements vscode.TreeDataProvider<HistoryNode>, 
     const config = vscode.workspace.getConfiguration('bazaar');
     const limit = config.get<number>('history.limit', 200);
     const includeMerged = config.get<boolean>('history.includeMerged', true);
-    this.revisions = await this.client.log({ limit, includeMerged, path: pathFilter });
+    this.revisions = await loadBazaarRevisionsWithFallback(
+      this.rootPath,
+      this.client,
+      { limit, includeMerged, path: pathFilter },
+      this.output
+    );
     this.visibleRevisions = this.query ? searchRevisions(this.revisions, this.query) : this.revisions;
     this.onDidChangeTreeDataEmitter.fire(undefined);
   }
 
   async search(): Promise<void> {
     const query = await vscode.window.showInputBox({
-      title: 'Search Bazaar History',
+      title: 'Bazaar 履歴を検索',
       value: this.query,
-      prompt: 'Search revno, revision id, message, author, tag, branch, or changed path.'
+      prompt: 'revno、リビジョン ID、メッセージ、作者、タグ、ブランチ、変更パスを検索します。'
     });
     if (query === undefined) {
       return;
@@ -154,12 +160,17 @@ export class BazaarHistoryView implements vscode.TreeDataProvider<HistoryNode>, 
     this.visibleRevisions = this.query ? searchRevisions(this.revisions, this.query) : this.revisions;
     if (this.query && this.visibleRevisions.length === 0) {
       const config = vscode.workspace.getConfiguration('bazaar');
-      this.revisions = await this.client.log({
-        limit: config.get<number>('history.limit', 200),
-        includeMerged: config.get<boolean>('history.includeMerged', true),
-        path: this.pathFilter,
-        match: this.query
-      });
+      this.revisions = await loadBazaarRevisionsWithFallback(
+        this.rootPath,
+        this.client,
+        {
+          limit: config.get<number>('history.limit', 200),
+          includeMerged: config.get<boolean>('history.includeMerged', true),
+          path: this.pathFilter,
+          match: this.query
+        },
+        this.output
+      );
       this.visibleRevisions = this.revisions;
     }
     this.onDidChangeTreeDataEmitter.fire(undefined);
@@ -177,11 +188,11 @@ export class BazaarHistoryView implements vscode.TreeDataProvider<HistoryNode>, 
     }
     const revisionId = normalizeRevisionSpec(revision.revisionId);
     if (!revisionId) {
-      vscode.window.showWarningMessage('The selected Bazaar revision does not have a revision id.');
+      vscode.window.showWarningMessage('選択した Bazaar リビジョンにはリビジョン ID がありません。');
       return;
     }
     await vscode.env.clipboard.writeText(revisionId);
-    vscode.window.showInformationMessage(`Copied Bazaar revision id ${revisionId}.`);
+    vscode.window.showInformationMessage(`Bazaar リビジョン ID ${revisionId} をコピーしました。`);
   }
 
   async showFileHistory(uri?: vscode.Uri): Promise<void> {
@@ -207,13 +218,13 @@ export class BazaarHistoryView implements vscode.TreeDataProvider<HistoryNode>, 
     }
 
     const content = [
-      `revno: ${normalizeRevisionSpec(revision.revno) ?? '(unknown)'}`,
-      `revision-id: ${normalizeRevisionSpec(revision.revisionId) ?? '(unknown)'}`,
+      `revno: ${normalizeRevisionSpec(revision.revno) ?? '(不明)'}`,
+      `revision-id: ${normalizeRevisionSpec(revision.revisionId) ?? '(不明)'}`,
       `committer: ${revision.committer}`,
       `branch: ${revision.branchNick}`,
       `timestamp: ${revision.timestamp}`,
-      `parents: ${revision.parentIds.join(', ') || '(none)'}`,
-      `tags: ${revision.tags.join(', ') || '(none)'}`,
+      `parents: ${revision.parentIds.join(', ') || '(なし)'}`,
+      `tags: ${revision.tags.join(', ') || '(なし)'}`,
       '',
       revision.message,
       '',
@@ -221,7 +232,7 @@ export class BazaarHistoryView implements vscode.TreeDataProvider<HistoryNode>, 
     ].join('\n');
 
     const document = await this.generatedProvider.openDocument(
-      `Bazaar Commit ${revisionDisplayLabel(revision)}`,
+      `Bazaar コミット ${revisionDisplayLabel(revision)}`,
       content,
       'text'
     );
@@ -283,7 +294,7 @@ export class BazaarHistoryView implements vscode.TreeDataProvider<HistoryNode>, 
     const diff = await this.client.diffChange(plan.revisionSpec, plan.changedPath);
     const document = await this.generatedProvider.openDocument(
       plan.title,
-      diff.trimEnd() || '(no diff)',
+      diff.trimEnd() || '(差分なし)',
       'diff'
     );
     await vscode.window.showTextDocument(document, { preview: true });
@@ -291,9 +302,9 @@ export class BazaarHistoryView implements vscode.TreeDataProvider<HistoryNode>, 
 }
 
 function firstLine(message: string): string {
-  return message.split(/\r?\n/)[0] || '(no message)';
+  return message.split(/\r?\n/)[0] || '(メッセージなし)';
 }
 
 function showNoValidRevisionWarning(): void {
-  vscode.window.showWarningMessage('No valid Bazaar revision is selected.');
+  vscode.window.showWarningMessage('有効な Bazaar リビジョンが選択されていません。');
 }

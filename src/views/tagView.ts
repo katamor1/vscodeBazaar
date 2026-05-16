@@ -28,16 +28,16 @@ export class BazaarTagView implements vscode.TreeDataProvider<BazaarTag>, vscode
 
   async create(force = false, existing?: BazaarTag): Promise<void> {
     const name = existing?.name ?? await vscode.window.showInputBox({
-      title: force ? 'Force Move Bazaar Tag' : 'Create Bazaar Tag',
-      prompt: 'Tag name'
+      title: force ? 'Bazaar タグを強制移動' : 'Bazaar タグを作成',
+      prompt: 'タグ名'
     });
     if (!name) {
       return;
     }
 
     const revision = await vscode.window.showInputBox({
-      title: force ? 'Force Move Bazaar Tag' : 'Create Bazaar Tag',
-      prompt: 'Revision, tag, or revision spec. Leave empty for current tip.'
+      title: force ? 'Bazaar タグを強制移動' : 'Bazaar タグを作成',
+      prompt: 'リビジョン、タグ、またはリビジョン指定。空欄の場合は現在の tip を使います。'
     });
     if (revision === undefined) {
       return;
@@ -45,11 +45,11 @@ export class BazaarTagView implements vscode.TreeDataProvider<BazaarTag>, vscode
 
     if (force) {
       const answer = await vscode.window.showWarningMessage(
-        `Move tag ${name} to ${revision || 'current tip'}?`,
+        `タグ ${name} を ${revision || '現在の tip'} に移動しますか?`,
         { modal: true },
-        'Force Move'
+        '強制移動'
       );
-      if (answer !== 'Force Move') {
+      if (answer !== '強制移動') {
         return;
       }
     }
@@ -60,19 +60,19 @@ export class BazaarTagView implements vscode.TreeDataProvider<BazaarTag>, vscode
 
   async delete(tag?: BazaarTag): Promise<void> {
     const name = tag?.name ?? await vscode.window.showInputBox({
-      title: 'Delete Bazaar Tag',
-      prompt: 'Tag name to delete'
+      title: 'Bazaar タグを削除',
+      prompt: '削除するタグ名'
     });
     if (!name) {
       return;
     }
 
     const answer = await vscode.window.showWarningMessage(
-      `Delete Bazaar tag ${name}?`,
+      `Bazaar タグ ${name} を削除しますか?`,
       { modal: true },
-      'Delete'
+      '削除'
     );
-    if (answer !== 'Delete') {
+    if (answer !== '削除') {
       return;
     }
 

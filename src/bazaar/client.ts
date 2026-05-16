@@ -32,6 +32,13 @@ export interface BazaarClientOptions {
   cwd: string;
   cliPath: string;
   run?: RunCommand;
+  onCommandComplete?: (trace: BazaarCommandTrace) => void;
+}
+
+export interface BazaarCommandTrace {
+  cwd: string;
+  commandLine: string;
+  result: CommandResult;
 }
 
 export interface BazaarLogOptions {
@@ -186,22 +193,20 @@ export class BazaarClient {
   }
 
   async log(options: BazaarLogOptions = {}): Promise<BazaarRevision[]> {
-    const args = ['log', '--xml', '--show-ids', '-v'];
-    if (options.limit) {
-      args.push('--limit', String(options.limit));
-    }
-    if (options.includeMerged) {
-      args.push('--include-merged');
-    }
-    if (options.match) {
-      args.push('--match', options.match);
-    }
-    if (options.path) {
-      args.push(options.path);
-    }
-
     try {
-      const result = await this.checked(args);
+      const result = await this.checked(logArgs(options));
+      return parseBazaarLogXml(result.stdout);
+    } catch (error) {
+      if (isMaximumRecursionError(error)) {
+        return [];
+      }
+      throw error;
+    }
+  }
+
+  async logAt(target: string, options: BazaarLogOptions = {}): Promise<BazaarRevision[]> {
+    try {
+      const result = await this.checked(logArgs(options, target));
       return parseBazaarLogXml(result.stdout);
     } catch (error) {
       if (isMaximumRecursionError(error)) {
@@ -399,7 +404,7 @@ export class BazaarClient {
       return parseBranches(branchOutput.stdout, currentNick);
     } catch (error) {
       if (isMaximumRecursionError(error)) {
-        return [];
+        return this.currentBranchFallbackForRecursionError();
       }
       throw error;
     }
@@ -454,12 +459,38 @@ export class BazaarClient {
     }
   }
 
+  private async currentBranchFallbackForRecursionError(): Promise<BazaarBranch[]> {
+    try {
+      return parseBranches('', await this.nick());
+    } catch {
+      return [];
+    }
+  }
+
   private async checked(args: readonly string[], allowedExitCodes: readonly number[] = [0]): Promise<CommandResult> {
-    const result = await this.enqueueCommand(() => this.runCommand(args));
+    const result = await this.enqueueCommand(() => this.runLoggedCommand(args));
     if (!allowedExitCodes.includes(result.exitCode)) {
       throw new BazaarCommandError(args, result);
     }
     return result;
+  }
+
+  private async runLoggedCommand(args: readonly string[]): Promise<CommandResult> {
+    const result = await this.runCommand(args);
+    this.reportCommandComplete(args, result);
+    return result;
+  }
+
+  private reportCommandComplete(args: readonly string[], result: CommandResult): void {
+    try {
+      this.options.onCommandComplete?.({
+        cwd: this.options.cwd,
+        commandLine: formatBazaarCommandLine(this.options.cliPath, args),
+        result
+      });
+    } catch {
+      // Command tracing is diagnostic-only and must not change Bazaar behavior.
+    }
   }
 
   private enqueueCommand<T>(task: () => Promise<T>): Promise<T> {
@@ -523,6 +554,25 @@ function uncommitArgs(dryRun: boolean, revision?: string): string[] {
   return args;
 }
 
+function logArgs(options: BazaarLogOptions, target?: string): string[] {
+  const args = ['log', '--xml', '--show-ids', '-v'];
+  if (options.limit) {
+    args.push('--limit', String(options.limit));
+  }
+  if (options.includeMerged) {
+    args.push('--include-merged');
+  }
+  if (options.match) {
+    args.push('--match', options.match);
+  }
+  if (target) {
+    args.push(target);
+  } else if (options.path) {
+    args.push(options.path);
+  }
+  return args;
+}
+
 function runProcess(cliPath: string, args: readonly string[], cwd: string): Promise<CommandResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(cliPath, args, {
@@ -548,6 +598,20 @@ function runProcess(cliPath: string, args: readonly string[], cwd: string): Prom
       });
     });
   });
+}
+
+function formatBazaarCommandLine(cliPath: string, args: readonly string[]): string {
+  return [cliPath, ...args].map(quoteCommandPart).join(' ');
+}
+
+function quoteCommandPart(value: string): string {
+  if (value === '') {
+    return '""';
+  }
+  if (!/[\s"]/.test(value)) {
+    return value;
+  }
+  return `"${value.replace(/"/g, '\\"')}"`;
 }
 
 function formatCommandError(args: readonly string[], result: CommandResult): string {

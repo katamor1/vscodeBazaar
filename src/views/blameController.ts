@@ -121,8 +121,8 @@ export class BazaarBlameController implements vscode.Disposable, vscode.HoverPro
 
     const markdown = new vscode.MarkdownString([
       `Bazaar rev ${annotation.revno}`,
-      `Author: ${annotation.author}`,
-      annotation.date ? `Date: ${annotation.date}` : undefined,
+      `作者: ${annotation.author}`,
+      annotation.date ? `日付: ${annotation.date}` : undefined,
       '',
       annotation.text
     ].filter(Boolean).join('\n\n'));
@@ -142,8 +142,8 @@ export class BazaarBlameController implements vscode.Disposable, vscode.HoverPro
     }
 
     const document = await this.generatedProvider.openDocument(
-      `Bazaar Blame Commit ${context.revisionSpec}`,
-      `revno: ${context.revisionSpec}\nauthor: ${context.annotation.author}\ndate: ${context.annotation.date ?? ''}\n\n${context.annotation.text}`,
+      `Bazaar Blame コミット ${context.revisionSpec}`,
+      `revno: ${context.revisionSpec}\n作者: ${context.annotation.author}\n日付: ${context.annotation.date ?? ''}\n\n${context.annotation.text}`,
       'text'
     );
     await vscode.window.showTextDocument(document, { preview: true });
@@ -165,7 +165,7 @@ export class BazaarBlameController implements vscode.Disposable, vscode.HoverPro
 
     const revision = await this.client.logRevision(context.revisionSpec);
     if (!revision) {
-      vscode.window.showWarningMessage('Unable to load Bazaar revision metadata for the selected line.');
+      vscode.window.showWarningMessage('選択行の Bazaar リビジョンメタデータを読み込めませんでした。');
       return;
     }
 
@@ -234,7 +234,7 @@ export class BazaarBlameController implements vscode.Disposable, vscode.HoverPro
 
     const revision = await this.client.logRevision(context.revisionSpec);
     const document = await this.generatedProvider.openDocument(
-      `Bazaar Line Commit ${context.revisionSpec}`,
+      `Bazaar 行コミット ${context.revisionSpec}`,
       this.commitDetailsContent(context, revision),
       'text'
     );
@@ -249,7 +249,7 @@ export class BazaarBlameController implements vscode.Disposable, vscode.HoverPro
 
     const revision = await this.client.logRevision(context.revisionSpec);
     if (!revision) {
-      vscode.window.showWarningMessage('Unable to load Bazaar revision metadata for the selected line.');
+      vscode.window.showWarningMessage('選択行の Bazaar リビジョンメタデータを読み込めませんでした。');
       return;
     }
 
@@ -357,11 +357,11 @@ export class BazaarBlameController implements vscode.Disposable, vscode.HoverPro
         includeMerged: config.get<boolean>('history.includeMerged', true)
       });
     } catch (error) {
-      this.output.appendLine(`Unable to load Bazaar revision choices: ${formatError(error)}`);
-      vscode.window.showWarningMessage('Unable to load Bazaar revision choices. Enter a revision manually.');
+      this.output.appendLine(`Bazaar リビジョン候補を読み込めませんでした: ${formatError(error)}`);
+      vscode.window.showWarningMessage('Bazaar リビジョン候補を読み込めませんでした。リビジョンを手入力してください。');
     }
     const picks: RevisionPickItem[] = [
-      { targetKind: 'manual', label: 'Enter Bazaar Revision...' },
+      { targetKind: 'manual', label: 'Bazaar リビジョンを入力...' },
       ...revisions.map((revision) => ({
         targetKind: 'revision' as const,
         label: revision.revno || revision.revisionId,
@@ -371,7 +371,7 @@ export class BazaarBlameController implements vscode.Disposable, vscode.HoverPro
       }))
     ];
     const picked = await vscode.window.showQuickPick(picks, {
-      placeHolder: 'Choose a Bazaar revision to compare with the working file.'
+      placeHolder: '作業中ファイルと比較する Bazaar リビジョンを選択'
     });
     return picked ? this.revisionSpecFromPick(picked) : undefined;
   }
@@ -386,11 +386,11 @@ export class BazaarBlameController implements vscode.Disposable, vscode.HoverPro
         this.client.branches(info.repository ?? '.')
       ]);
     } catch (error) {
-      this.output.appendLine(`Unable to load Bazaar branch or tag choices: ${formatError(error)}`);
-      vscode.window.showWarningMessage('Unable to load Bazaar branch or tag choices. Enter a revision manually.');
+      this.output.appendLine(`Bazaar ブランチまたはタグ候補を読み込めませんでした: ${formatError(error)}`);
+      vscode.window.showWarningMessage('Bazaar ブランチまたはタグ候補を読み込めませんでした。リビジョンを手入力してください。');
     }
     const picks: RevisionPickItem[] = [
-      { targetKind: 'manual', label: 'Enter Bazaar Revision, Branch, or Tag...' },
+      { targetKind: 'manual', label: 'Bazaar リビジョン、ブランチ、またはタグを入力...' },
       ...tags.map((tag) => ({
         targetKind: 'tag' as const,
         label: tag.name,
@@ -400,12 +400,12 @@ export class BazaarBlameController implements vscode.Disposable, vscode.HoverPro
       ...branches.map((branch) => ({
         targetKind: 'branch' as const,
         label: branch.name,
-        description: branch.current ? 'current branch' : branch.path,
+        description: branch.current ? '現在のブランチ' : branch.path,
         branch
       }))
     ];
     const picked = await vscode.window.showQuickPick(picks, {
-      placeHolder: 'Choose a Bazaar branch or tag to compare with the working file.'
+      placeHolder: '作業中ファイルと比較する Bazaar ブランチまたはタグを選択'
     });
     return picked ? this.revisionSpecFromPick(picked) : undefined;
   }
@@ -413,8 +413,8 @@ export class BazaarBlameController implements vscode.Disposable, vscode.HoverPro
   private async revisionSpecFromPick(picked: RevisionPickItem): Promise<{ revisionSpec: string; label: string } | undefined> {
     if (picked.targetKind === 'manual') {
       const input = await vscode.window.showInputBox({
-        title: 'Bazaar Revision',
-        prompt: 'Revision, revision id, tag:<name>, or other Bazaar revision spec.'
+        title: 'Bazaar リビジョン',
+        prompt: 'リビジョン、リビジョン ID、tag:<名前>、その他の Bazaar リビジョン指定を入力してください。'
       });
       const revisionSpec = manualRevisionSpec(input);
       if (!revisionSpec && input !== undefined) {
@@ -437,13 +437,13 @@ export class BazaarBlameController implements vscode.Disposable, vscode.HoverPro
     try {
       revisions = await this.client.log({ limit: 1, includeMerged: false, path: picked.branch.path });
     } catch (error) {
-      this.output.appendLine(`Unable to resolve Bazaar branch ${picked.branch.name}: ${formatError(error)}`);
-      vscode.window.showWarningMessage(`Unable to resolve Bazaar branch ${picked.branch.name}.`);
+      this.output.appendLine(`Bazaar ブランチ ${picked.branch.name} を解決できませんでした: ${formatError(error)}`);
+      vscode.window.showWarningMessage(`Bazaar ブランチ ${picked.branch.name} を解決できませんでした。`);
       return undefined;
     }
     const revisionSpec = revisions[0] ? branchTipRevisionSpec(revisions[0]) : undefined;
     if (!revisionSpec) {
-      vscode.window.showWarningMessage(`Unable to resolve Bazaar branch ${picked.branch.name}.`);
+      vscode.window.showWarningMessage(`Bazaar ブランチ ${picked.branch.name} を解決できませんでした。`);
       return undefined;
     }
     return { revisionSpec, label: picked.label };
@@ -457,13 +457,13 @@ export class BazaarBlameController implements vscode.Disposable, vscode.HoverPro
       `annotation-author: ${context.annotation.author}`,
       context.annotation.date ? `annotation-date: ${context.annotation.date}` : undefined,
       '',
-      revision ? `revno: ${revision.revno || '(unknown)'}` : `revno: ${context.revisionSpec}`,
-      revision ? `revision-id: ${revision.revisionId || '(unknown)'}` : undefined,
+      revision ? `revno: ${revision.revno || '(不明)'}` : `revno: ${context.revisionSpec}`,
+      revision ? `revision-id: ${revision.revisionId || '(不明)'}` : undefined,
       revision ? `committer: ${revision.committer}` : undefined,
       revision ? `branch: ${revision.branchNick}` : undefined,
       revision ? `timestamp: ${revision.timestamp}` : undefined,
-      revision ? `parents: ${revision.parentIds.join(', ') || '(none)'}` : undefined,
-      revision ? `tags: ${revision.tags.join(', ') || '(none)'}` : undefined,
+      revision ? `parents: ${revision.parentIds.join(', ') || '(なし)'}` : undefined,
+      revision ? `tags: ${revision.tags.join(', ') || '(なし)'}` : undefined,
       '',
       revision?.message ?? context.annotation.text,
       '',
@@ -502,11 +502,11 @@ export class BazaarBlameController implements vscode.Disposable, vscode.HoverPro
 }
 
 function showNoBlameRevisionWarning(): void {
-  vscode.window.showWarningMessage('No valid Bazaar revision is available for the selected line.');
+  vscode.window.showWarningMessage('選択行で有効な Bazaar リビジョンを利用できません。');
 }
 
 function firstLine(message: string): string {
-  return message.split(/\r?\n/)[0] || '(no message)';
+  return message.split(/\r?\n/)[0] || '(メッセージなし)';
 }
 
 function formatError(error: unknown): string {

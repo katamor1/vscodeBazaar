@@ -38,7 +38,7 @@ export class BazaarResourceState implements vscode.SourceControlResourceState {
       : vscode.Uri.file(path.join(rootPath, relativePath));
     this.command = commandForResource?.(this.resourceUri) ?? {
       command: 'vscode.open',
-      title: 'Open Bazaar File',
+      title: 'Bazaar ファイルを開く',
       arguments: [this.resourceUri]
     };
     this.contextValue = data.type === 'change' ? data.change.kind : 'conflict';
@@ -78,10 +78,10 @@ export class BazaarScmProvider implements vscode.Disposable {
   ) {
     const rootUri = vscode.Uri.file(rootPath);
     this.sourceControl = vscode.scm.createSourceControl('bazaar', 'Bazaar', rootUri);
-    this.sourceControl.inputBox.placeholder = 'Commit message for included Bazaar changes';
+    this.sourceControl.inputBox.placeholder = 'コミット対象の Bazaar 変更に使うコミットメッセージ';
     this.sourceControl.acceptInputCommand = {
       command: 'bazaar.commit',
-      title: 'Commit Included Changes'
+      title: 'コミット対象の変更をコミット'
     };
     this.sourceControl.quickDiffProvider = {
       provideOriginalResource: (uri) => this.provideOriginalResource(uri)
@@ -91,10 +91,10 @@ export class BazaarScmProvider implements vscode.Disposable {
       { command: 'bazaar.push', title: '$(cloud-upload) Bazaar Push' }
     ];
 
-    this.includedGroup = this.sourceControl.createResourceGroup('included', 'Included');
-    this.changesGroup = this.sourceControl.createResourceGroup('changes', 'Changes');
-    this.untrackedGroup = this.sourceControl.createResourceGroup('untracked', 'Untracked');
-    this.conflictsGroup = this.sourceControl.createResourceGroup('conflicts', 'Conflicts');
+    this.includedGroup = this.sourceControl.createResourceGroup('included', 'コミット対象');
+    this.changesGroup = this.sourceControl.createResourceGroup('changes', '変更');
+    this.untrackedGroup = this.sourceControl.createResourceGroup('untracked', '未追跡');
+    this.conflictsGroup = this.sourceControl.createResourceGroup('conflicts', '競合');
 
     for (const group of [this.includedGroup, this.changesGroup, this.untrackedGroup, this.conflictsGroup]) {
       group.hideWhenEmpty = true;
@@ -186,7 +186,7 @@ export class BazaarScmProvider implements vscode.Disposable {
     }
 
     const answer = await vscode.window.showWarningMessage(
-      `Revert Bazaar changes in ${change.path}?`,
+      `${change.path} の Bazaar 変更を Revert しますか?`,
       { modal: true },
       'Revert'
     );
@@ -194,7 +194,7 @@ export class BazaarScmProvider implements vscode.Disposable {
       return;
     }
 
-    await this.runWithProgress('revert', `Reverting ${change.path}`, async () => {
+    await this.runWithProgress('revert', `${change.path} を Revert 中`, async () => {
       await this.client.revert([change.path]);
       this.includedSet.uninclude(change);
       await this.refresh();
@@ -202,11 +202,11 @@ export class BazaarScmProvider implements vscode.Disposable {
   }
 
   async revertAll(): Promise<void> {
-    if (!(await confirmDangerousOperation({ id: 'revert-all', label: 'Revert all Bazaar changes and pending merge state', target: this.rootPath }))) {
+    if (!(await confirmDangerousOperation({ id: 'revert-all', label: 'すべての Bazaar 変更と pending merge 状態を Revert', target: this.rootPath }))) {
       return;
     }
 
-    await this.runWithProgress('revert all', 'Reverting all Bazaar changes', async () => {
+    await this.runWithProgress('revert all', 'すべての Bazaar 変更を Revert 中', async () => {
       await this.client.revertAll();
       this.includedSet.clear();
       await this.refresh();
@@ -219,13 +219,13 @@ export class BazaarScmProvider implements vscode.Disposable {
     const answer = await vscode.window.showWarningMessage(
       prompt.message,
       { modal: true, detail: prompt.detail },
-      'Forget Pending Merge'
+      'Pending Merge をクリア'
     );
-    if (answer !== 'Forget Pending Merge') {
+    if (answer !== 'Pending Merge をクリア') {
       return;
     }
 
-    await this.runWithProgress('revert --forget-merges', 'Forgetting Bazaar pending merge state', async () => {
+    await this.runWithProgress('revert --forget-merges', 'Bazaar の pending merge 状態をクリア中', async () => {
       await this.client.forgetMerges();
       await this.refresh();
     });
@@ -234,28 +234,28 @@ export class BazaarScmProvider implements vscode.Disposable {
   async commit(): Promise<void> {
     const message = this.sourceControl.inputBox.value.trim();
     if (!message) {
-      vscode.window.showWarningMessage('Enter a Bazaar commit message first.');
+      vscode.window.showWarningMessage('先に Bazaar のコミットメッセージを入力してください。');
       return;
     }
 
     const includedChanges = this.includedSet.getIncludedChanges(this.currentChanges);
     if (includedChanges.length === 0) {
-      vscode.window.showWarningMessage('Include at least one Bazaar change before committing.');
+      vscode.window.showWarningMessage('コミット前に 1 件以上の Bazaar 変更をコミット対象へ含めてください。');
       return;
     }
     const includesPendingMerge = includedChanges.some(isPendingMergeChange);
     if (includesPendingMerge) {
       const answer = await vscode.window.showWarningMessage(
-        'Commit Bazaar pending merge state? Bazaar merge commits are whole-tree commits, so this will run bzr commit without a file list.',
+        'Bazaar の pending merge 状態をコミットしますか? Bazaar のマージコミットはツリー全体のコミットになるため、ファイルリストなしで bzr commit を実行します。',
         { modal: true },
-        'Commit Merge'
+        'マージをコミット'
       );
-      if (answer !== 'Commit Merge') {
+      if (answer !== 'マージをコミット') {
         return;
       }
     }
 
-    await this.runWithProgress('commit', 'Committing included Bazaar changes', async () => {
+    await this.runWithProgress('commit', 'コミット対象の Bazaar 変更をコミット中', async () => {
       const fileChanges = includedChanges.filter((change) => !isPendingMergeChange(change));
       await this.client.prepareIncludedForCommit(fileChanges);
       await this.client.commit(
@@ -270,7 +270,7 @@ export class BazaarScmProvider implements vscode.Disposable {
   }
 
   async pull(): Promise<void> {
-    await this.runWithProgress('pull', 'Running Bazaar pull', async () => {
+    await this.runWithProgress('pull', 'Bazaar pull を実行中', async () => {
       try {
         await this.client.pull();
         await this.refresh();
@@ -284,7 +284,7 @@ export class BazaarScmProvider implements vscode.Disposable {
   }
 
   async push(): Promise<void> {
-    await this.runWithProgress('push', 'Running Bazaar push', async () => {
+    await this.runWithProgress('push', 'Bazaar push を実行中', async () => {
       await this.client.push();
       await this.refresh();
     });
@@ -297,15 +297,15 @@ export class BazaarScmProvider implements vscode.Disposable {
 
     const conflict = resource.data.conflict;
     const answer = await vscode.window.showWarningMessage(
-      `Mark ${conflict.path} as resolved in Bazaar?`,
+      `${conflict.path} を Bazaar で解決済みとしてマークしますか?`,
       { modal: true },
-      'Resolve'
+      '解決済みにする'
     );
-    if (answer !== 'Resolve') {
+    if (answer !== '解決済みにする') {
       return;
     }
 
-    await this.runWithProgress('resolve', `Resolving ${conflict.path}`, async () => {
+    await this.runWithProgress('resolve', `${conflict.path} を解決中`, async () => {
       await this.client.resolve(conflict.path);
       await this.refresh();
     });
@@ -319,7 +319,7 @@ export class BazaarScmProvider implements vscode.Disposable {
     try {
       await vscode.commands.executeCommand('git.openMergeEditor', resource.resourceUri);
     } catch (error) {
-      this.output.appendLine(`Unable to open VS Code merge editor for ${resource.relativePath}: ${formatError(error)}`);
+      this.output.appendLine(`${resource.relativePath} を VS Code マージエディターで開けませんでした: ${formatError(error)}`);
     }
   }
 
@@ -329,13 +329,13 @@ export class BazaarScmProvider implements vscode.Disposable {
     }
 
     const conflict = resource.data.conflict;
-    await this.runWithProgress(`resolve ${action}`, `Resolving ${conflict.path}`, async () => {
+    await this.runWithProgress(`resolve ${action}`, `${conflict.path} を解決中`, async () => {
       if (action === 'take-this' || action === 'take-other') {
         await this.client.resolveConflict(conflict.path, action);
       } else if (await this.applyTextConflictResolution(resource.resourceUri, action)) {
         await this.client.resolve(conflict.path);
       } else {
-        vscode.window.showWarningMessage(`No text conflict markers were found in ${conflict.path}. Open the merge editor or resolve it manually.`);
+        vscode.window.showWarningMessage(`${conflict.path} にテキスト競合マーカーが見つかりませんでした。マージエディターで開くか手動で解決してください。`);
         return;
       }
       await this.refresh();
@@ -355,21 +355,21 @@ export class BazaarScmProvider implements vscode.Disposable {
     edit.replace(document.uri, fullRange, resolved.content);
     const applied = await vscode.workspace.applyEdit(edit);
     if (!applied) {
-      throw new Error(`Unable to update ${document.uri.fsPath}.`);
+      throw new Error(`${document.uri.fsPath} を更新できませんでした。`);
     }
     const saved = await document.save();
     if (!saved) {
-      throw new Error(`Unable to save ${document.uri.fsPath}.`);
+      throw new Error(`${document.uri.fsPath} を保存できませんでした。`);
     }
     return true;
   }
 
   async resolveAll(): Promise<void> {
-    if (!(await confirmDangerousOperation({ id: 'resolve-all', label: 'Resolve all Bazaar conflicts', target: this.rootPath }))) {
+    if (!(await confirmDangerousOperation({ id: 'resolve-all', label: 'すべての Bazaar 競合を解決', target: this.rootPath }))) {
       return;
     }
 
-    await this.runWithProgress('resolve all', 'Resolving all Bazaar conflicts', async () => {
+    await this.runWithProgress('resolve all', 'すべての Bazaar 競合を解決中', async () => {
       await this.client.resolveAll();
       await this.refresh();
     });
@@ -377,15 +377,15 @@ export class BazaarScmProvider implements vscode.Disposable {
 
   async resolveAuto(): Promise<void> {
     const answer = await vscode.window.showWarningMessage(
-      'Run Bazaar auto-resolve for all conflicts?',
+      'すべての競合に Bazaar の自動解決を実行しますか?',
       { modal: true },
-      'Auto Resolve'
+      '自動解決'
     );
-    if (answer !== 'Auto Resolve') {
+    if (answer !== '自動解決') {
       return;
     }
 
-    await this.runWithProgress('resolve --auto', 'Running Bazaar auto-resolve', async () => {
+    await this.runWithProgress('resolve --auto', 'Bazaar 自動解決を実行中', async () => {
       await this.client.resolveAuto();
       await this.refresh();
     });
@@ -413,27 +413,27 @@ export class BazaarScmProvider implements vscode.Disposable {
   async previewCleanTree(): Promise<void> {
     const picked = await vscode.window.showQuickPick(
       [
-        { label: 'unknown', picked: true },
-        { label: 'ignored' },
-        { label: 'detritus' }
-      ] satisfies Array<vscode.QuickPickItem & { label: BazaarCleanTreeKind }>,
+        { label: '未追跡', description: 'unknown', cleanTreeKind: 'unknown', picked: true },
+        { label: '無視対象', description: 'ignored', cleanTreeKind: 'ignored' },
+        { label: '一時ファイル', description: 'detritus', cleanTreeKind: 'detritus' }
+      ] satisfies Array<vscode.QuickPickItem & { cleanTreeKind: BazaarCleanTreeKind }>,
       {
-        title: 'Preview Bazaar clean-tree',
+        title: 'Bazaar clean-tree のプレビュー',
         canPickMany: true,
-        placeHolder: 'Choose file classes to preview'
+        placeHolder: 'プレビューするファイル分類を選択'
       }
     );
     if (!picked || picked.length === 0) {
       return;
     }
 
-    const kinds = picked.map((item) => item.label as BazaarCleanTreeKind);
+    const kinds = picked.map((item) => item.cleanTreeKind);
     const candidates = await this.client.cleanTreeDryRun(kinds);
     this.previewedCleanTreeKinds = kinds;
     const content = candidates.length > 0
       ? candidates.map((candidate) => `${candidate.kind}\t${candidate.path}`).join('\n')
-      : 'No clean-tree candidates.';
-    const document = await this.generatedProvider.openDocument('Bazaar Clean Tree Preview', content, 'text');
+      : 'clean-tree の候補はありません。';
+    const document = await this.generatedProvider.openDocument('Bazaar clean-tree プレビュー', content, 'text');
     await vscode.window.showTextDocument(document, { preview: true });
   }
 
@@ -445,11 +445,11 @@ export class BazaarScmProvider implements vscode.Disposable {
       return;
     }
     const target = this.previewedCleanTreeKinds.join(', ');
-    if (!(await confirmDangerousOperation({ id: 'clean-tree', label: 'Clean Bazaar working tree', target }))) {
+    if (!(await confirmDangerousOperation({ id: 'clean-tree', label: 'Bazaar 作業ツリーを clean-tree', target }))) {
       return;
     }
 
-    await this.runWithProgress('clean-tree', 'Cleaning Bazaar working tree', async () => {
+    await this.runWithProgress('clean-tree', 'Bazaar 作業ツリーを clean-tree 中', async () => {
       await this.client.cleanTreeRun(this.previewedCleanTreeKinds);
       this.previewedCleanTreeKinds = [];
       await this.refresh();
@@ -458,15 +458,15 @@ export class BazaarScmProvider implements vscode.Disposable {
 
   async previewUncommit(): Promise<void> {
     const revision = await vscode.window.showInputBox({
-      title: 'Preview Bazaar uncommit',
-      prompt: 'Revision to leave the branch at. Leave empty to preview removing the last revision.'
+      title: 'Bazaar uncommit のプレビュー',
+      prompt: 'ブランチに残すリビジョン。空欄の場合は最後のリビジョン削除をプレビューします。'
     });
     if (revision === undefined) {
       return;
     }
     this.previewedUncommitRevision = revision.trim() || undefined;
     const content = await this.client.uncommitDryRun(this.previewedUncommitRevision);
-    const document = await this.generatedProvider.openDocument('Bazaar Uncommit Preview', content, 'text');
+    const document = await this.generatedProvider.openDocument('Bazaar uncommit プレビュー', content, 'text');
     await vscode.window.showTextDocument(document, { preview: true });
   }
 
@@ -474,12 +474,12 @@ export class BazaarScmProvider implements vscode.Disposable {
     if (this.previewedUncommitRevision === undefined) {
       await this.previewUncommit();
     }
-    const target = this.previewedUncommitRevision ?? 'last revision';
-    if (!(await confirmDangerousOperation({ id: 'uncommit', label: 'Uncommit Bazaar revision', target }))) {
+    const target = this.previewedUncommitRevision ?? '最後のリビジョン';
+    if (!(await confirmDangerousOperation({ id: 'uncommit', label: 'Bazaar リビジョンを uncommit', target }))) {
       return;
     }
 
-    await this.runWithProgress('uncommit', 'Running Bazaar uncommit', async () => {
+    await this.runWithProgress('uncommit', 'Bazaar uncommit を実行中', async () => {
       await this.client.uncommitRun(this.previewedUncommitRevision);
       this.previewedUncommitRevision = undefined;
       await this.refresh();
@@ -488,31 +488,31 @@ export class BazaarScmProvider implements vscode.Disposable {
 
   async breakLock(): Promise<void> {
     const info = await this.client.infoText();
-    const document = await this.generatedProvider.openDocument('Bazaar Working Tree Info', info, 'text');
+    const document = await this.generatedProvider.openDocument('Bazaar 作業ツリー情報', info, 'text');
     await vscode.window.showTextDocument(document, { preview: true });
-    if (!(await confirmDangerousOperation({ id: 'break-lock', label: 'Break Bazaar lock', target: this.rootPath }))) {
+    if (!(await confirmDangerousOperation({ id: 'break-lock', label: 'Bazaar ロックを解除', target: this.rootPath }))) {
       return;
     }
 
-    await this.runWithProgress('break-lock', 'Breaking Bazaar lock', async () => {
+    await this.runWithProgress('break-lock', 'Bazaar ロックを解除中', async () => {
       await this.client.breakLock('.');
       await this.refresh();
     });
   }
 
   async doctor(): Promise<void> {
-    await this.runWithProgress('doctor', 'Running Bazaar diagnostics', async () => {
+    await this.runWithProgress('doctor', 'Bazaar 診断を実行中', async () => {
       const [info, check, textConflicts] = await Promise.all([
         this.client.infoText(),
         this.client.checkTree(),
         this.client.conflictsText()
       ]);
-      this.output.appendLine('=== Bazaar info ===');
+      this.output.appendLine('=== Bazaar 情報 ===');
       this.output.appendLine(info.trimEnd());
       this.output.appendLine('=== Bazaar check ===');
-      this.output.appendLine(check.trimEnd() || '(no output)');
-      this.output.appendLine('=== Text conflicts ===');
-      this.output.appendLine(textConflicts.length ? textConflicts.join('\n') : '(none)');
+      this.output.appendLine(check.trimEnd() || '(出力なし)');
+      this.output.appendLine('=== テキスト競合 ===');
+      this.output.appendLine(textConflicts.length ? textConflicts.join('\n') : '(なし)');
       this.output.show();
     });
   }
@@ -538,7 +538,7 @@ export class BazaarScmProvider implements vscode.Disposable {
   }
 
   private async showTextDiffFallback(relativePath: string, cause: unknown): Promise<void> {
-    this.output.appendLine(`Unable to open VS Code diff for ${relativePath}: ${formatError(cause)}`);
+    this.output.appendLine(`${relativePath} を VS Code 差分エディターで開けませんでした: ${formatError(cause)}`);
     const diff = await this.client.diff(relativePath);
     this.output.appendLine(diff);
     this.output.show();
@@ -581,7 +581,7 @@ export class BazaarScmProvider implements vscode.Disposable {
   }
 
   private async runWithErrors(label: string, task: () => Promise<void>): Promise<void> {
-    this.output.appendLine(`bzr ${label}`);
+    this.output.appendLine(`=== Bazaar 操作: ${label} ===`);
     try {
       await task();
     } catch (error) {
@@ -597,39 +597,39 @@ export class BazaarScmProvider implements vscode.Disposable {
     }
 
     this.output.show(true);
-    vscode.window.showErrorMessage(`Bazaar ${label} failed. See Bazaar output for details.`);
+    vscode.window.showErrorMessage(`Bazaar ${label} に失敗しました。詳細は Bazaar 出力を確認してください。`);
   }
 
   private async handleDivergedPull(error: unknown): Promise<void> {
     if (error instanceof BazaarCommandError) {
-      this.output.appendLine('Bazaar pull stopped because the parent and current branches have diverged.');
+      this.output.appendLine('Bazaar pull は、親ブランチと現在のブランチが分岐しているため停止しました。');
       this.appendCommandError(error);
     }
 
     const action = await vscode.window.showWarningMessage(
-      'Bazaar pull cannot continue because the branches have diverged. Use Bazaar merge to reconcile them.',
-      'Merge Parent',
-      'Show Missing',
-      'Open Output'
+      'ブランチが分岐しているため Bazaar pull を続行できません。Bazaar merge で差分を統合してください。',
+      '親ブランチをマージ',
+      '未取得/未反映を表示',
+      '出力を開く'
     );
 
-    if (action === 'Merge Parent') {
+    if (action === '親ブランチをマージ') {
       try {
         await this.client.mergeParent();
         await this.refresh();
-        vscode.window.showInformationMessage('Bazaar merge completed. Resolve conflicts if needed, then commit the merge.');
+        vscode.window.showInformationMessage('Bazaar merge が完了しました。必要に応じて競合を解決し、マージをコミットしてください。');
       } catch (mergeError) {
         this.reportError('merge', mergeError);
       }
       return;
     }
 
-    if (action === 'Show Missing') {
+    if (action === '未取得/未反映を表示') {
       try {
         const content = await this.client.missing();
         const document = await this.generatedProvider.openDocument(
-          'Bazaar Missing Revisions',
-          content.trimEnd() || 'Bazaar reports no missing revisions.',
+          'Bazaar 未取得/未反映リビジョン',
+          content.trimEnd() || 'Bazaar は未取得/未反映リビジョンなしと報告しました。',
           'text'
         );
         await vscode.window.showTextDocument(document, { preview: true });
@@ -639,13 +639,13 @@ export class BazaarScmProvider implements vscode.Disposable {
       return;
     }
 
-    if (action === 'Open Output') {
+    if (action === '出力を開く') {
       this.output.show(true);
     }
   }
 
   private appendCommandError(error: BazaarCommandError): void {
-    this.output.appendLine(`Command failed: bzr ${error.args.join(' ')}`);
+    this.output.appendLine(`コマンド失敗: bzr ${error.args.join(' ')}`);
     if (error.result.stdout) {
       this.output.appendLine(error.result.stdout.trimEnd());
     }
@@ -685,18 +685,18 @@ function iconForKind(kind: BazaarChangeKind): string {
 function labelForKind(kind: BazaarChangeKind): string {
   switch (kind) {
     case 'added':
-      return 'Added in Bazaar';
+      return 'Bazaar で追加';
     case 'removed':
-      return 'Removed in Bazaar';
+      return 'Bazaar で削除';
     case 'renamed':
-      return 'Renamed in Bazaar';
+      return 'Bazaar で名前変更';
     case 'pendingMerge':
-      return 'Pending Bazaar merge';
+      return 'Bazaar の pending merge';
     case 'unknown':
-      return 'Unknown to Bazaar';
+      return 'Bazaar で未追跡';
     case 'modified':
     default:
-      return 'Modified in Bazaar';
+      return 'Bazaar で変更';
   }
 }
 

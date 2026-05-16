@@ -1,6 +1,7 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { BazaarClient } from './bazaar/client';
+import { formatBazaarCommandTrace } from './bazaar/commandTrace';
 import { findDotBzrRoot } from './bazaar/rootFinder';
 import { UNAVAILABLE_COMMANDS } from './extensionCommands';
 import { BazaarScmProvider } from './scm/bazaarScmProvider';
@@ -25,31 +26,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
   if (!workspaceFolder) {
-    output.appendLine('No workspace folder is open.');
-    registerUnavailableCommands(context, output, 'No workspace folder is open.');
+    output.appendLine('ワークスペースフォルダーが開かれていません。');
+    registerUnavailableCommands(context, output, 'ワークスペースフォルダーが開かれていません。');
     return;
   }
 
   const cliPath = vscode.workspace.getConfiguration('bazaar').get<string>('cliPath', 'bzr');
-  const initialClient = new BazaarClient({
-    cwd: workspaceFolder.uri.fsPath,
-    cliPath
-  });
+  const initialClient = createBazaarClient(workspaceFolder.uri.fsPath, cliPath, output);
 
   const rootPath = await findBazaarRoot(workspaceFolder.uri.fsPath, initialClient, output);
   if (!rootPath) {
-    registerUnavailableCommands(context, output, 'No Bazaar working tree is active.');
+    registerUnavailableCommands(context, output, '有効な Bazaar 作業ツリーがありません。');
     return;
   }
 
-  const client = new BazaarClient({ cwd: rootPath, cliPath });
+  const client = createBazaarClient(rootPath, cliPath, output);
   const originalProvider = new BazaarOriginalDocumentProvider(rootPath, client, output);
   const revisionProvider = new BazaarRevisionDocumentProvider(client, output);
   const generatedProvider = new BazaarGeneratedDocumentProvider();
   const provider = new BazaarScmProvider(rootPath, client, originalProvider, generatedProvider, output);
   const historyView = new BazaarHistoryView(rootPath, client, revisionProvider, generatedProvider, output);
   const tagView = new BazaarTagView(client);
-  const graphView = new BazaarGraphView(client);
+  const graphView = new BazaarGraphView(rootPath, client, output);
   const shelveView = new BazaarShelveView(rootPath, client, generatedProvider, output);
   const blameController = new BazaarBlameController(rootPath, client, revisionProvider, generatedProvider, output);
   let branchView: BazaarBranchView;
@@ -65,10 +63,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }));
 
     for (const failure of failures) {
-      output.appendLine(`Bazaar refresh after branch switch failed: ${formatViewRefreshFailure(failure)}`);
+      output.appendLine(`ブランチ切替後の Bazaar 更新に失敗しました: ${formatViewRefreshFailure(failure)}`);
     }
     if (failures.length > 0) {
-      vscode.window.showWarningMessage('Bazaar branch switched, but some views could not be refreshed. See Bazaar output for details.');
+      vscode.window.showWarningMessage('Bazaar ブランチは切り替わりましたが、一部のビューを更新できませんでした。詳細は Bazaar 出力を確認してください。');
     }
   };
   branchView = new BazaarBranchView(rootPath, client, output, refreshAfterBranchSwitch);
@@ -93,47 +91,47 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.window.registerTreeDataProvider('bazaarShelves', shelveView),
     vscode.window.registerWebviewViewProvider('bazaarGraph', graphView, { webviewOptions: { retainContextWhenHidden: true } }),
     vscode.languages.registerHoverProvider({ scheme: 'file' }, blameController),
-    vscode.commands.registerCommand('bazaar.history.refresh', () => runCommand(output, 'history refresh', () => historyView.refresh())),
-    vscode.commands.registerCommand('bazaar.history.search', () => runCommand(output, 'history search', () => historyView.search())),
-    vscode.commands.registerCommand('bazaar.history.clearFileFilter', () => runCommand(output, 'history clear file filter', () => historyView.clearFileFilter())),
-    vscode.commands.registerCommand('bazaar.history.showFileHistory', (uri?: vscode.Uri) => runCommand(output, 'file history', () => historyView.showFileHistory(uri))),
-    vscode.commands.registerCommand('bazaar.history.showCommit', (revision) => runCommand(output, 'show commit', () => historyView.showCommit(revision))),
-    vscode.commands.registerCommand('bazaar.history.showCommitDiff', (revision, changedPath?: string) => runCommand(output, 'show commit diff', () => historyView.showCommitDiff(revision, changedPath))),
-    vscode.commands.registerCommand('bazaar.history.copyRevisionId', (revision) => runCommand(output, 'copy revision id', () => historyView.copyRevisionId(revision))),
-    vscode.commands.registerCommand('bazaar.history.openFileAtRevision', (revision, changedPath?: string) => runCommand(output, 'open file at revision', () => historyView.openFileAtRevision(revision, changedPath))),
-    vscode.commands.registerCommand('bazaar.blame.toggle', () => runCommand(output, 'toggle blame', () => blameController.toggle())),
-    vscode.commands.registerCommand('bazaar.blame.showCommit', () => runCommand(output, 'blame show commit', () => blameController.showCommit())),
-    vscode.commands.registerCommand('bazaar.blame.showDiff', () => runCommand(output, 'blame show diff', () => blameController.showDiff())),
-    vscode.commands.registerCommand('bazaar.blame.openFileAtRevision', () => runCommand(output, 'blame open file at revision', () => blameController.openFileAtRevision())),
-    vscode.commands.registerCommand('bazaar.blame.openLineChangesWithPreviousRevision', () => runCommand(output, 'blame open line changes with previous revision', () => blameController.openLineChangesWithPreviousRevision())),
-    vscode.commands.registerCommand('bazaar.blame.openLineChangesWithWorkingFile', () => runCommand(output, 'blame open line changes with working file', () => blameController.openLineChangesWithWorkingFile())),
-    vscode.commands.registerCommand('bazaar.blame.openChangesWithPreviousRevision', () => runCommand(output, 'blame open changes with previous revision', () => blameController.openChangesWithPreviousRevision())),
-    vscode.commands.registerCommand('bazaar.blame.openChangesWithRevision', () => runCommand(output, 'blame open changes with revision', () => blameController.openChangesWithRevision())),
-    vscode.commands.registerCommand('bazaar.blame.openChangesWithBranchOrTag', () => runCommand(output, 'blame open changes with branch or tag', () => blameController.openChangesWithBranchOrTag())),
-    vscode.commands.registerCommand('bazaar.blame.quickShowLineCommit', () => runCommand(output, 'blame quick show line commit', () => blameController.quickShowLineCommit())),
-    vscode.commands.registerCommand('bazaar.blame.inspectLineCommitDetails', () => runCommand(output, 'blame inspect line commit details', () => blameController.inspectLineCommitDetails())),
-    vscode.window.onDidChangeActiveTextEditor((editor) => runCommand(output, 'update blame', () => blameController.update(editor))),
-    vscode.window.onDidChangeTextEditorSelection((event) => runCommand(output, 'update blame selection', () => blameController.update(event.textEditor))),
-    vscode.workspace.onDidSaveTextDocument(() => runCommand(output, 'refresh blame', () => blameController.refresh())),
-    vscode.commands.registerCommand('bazaar.branch.refresh', () => runCommand(output, 'branch refresh', () => branchView.refresh())),
-    vscode.commands.registerCommand('bazaar.branch.create', () => runCommand(output, 'branch create', () => branchView.create())),
-    vscode.commands.registerCommand('bazaar.branch.switch', (branch) => runCommand(output, 'branch switch', () => branchView.switch(branch))),
-    vscode.commands.registerCommand('bazaar.branch.switchForce', (branch) => runCommand(output, 'branch force switch', () => branchView.switch(branch, true))),
-    vscode.commands.registerCommand('bazaar.branch.remove', (branch) => runCommand(output, 'branch remove', () => branchView.remove(branch))),
-    vscode.commands.registerCommand('bazaar.branch.removeForce', (branch) => runCommand(output, 'branch force remove', () => branchView.remove(branch, true))),
-    vscode.commands.registerCommand('bazaar.tag.refresh', () => runCommand(output, 'tag refresh', () => tagView.refresh())),
-    vscode.commands.registerCommand('bazaar.tag.create', () => runCommand(output, 'tag create', () => tagView.create())),
-    vscode.commands.registerCommand('bazaar.tag.delete', (tag) => runCommand(output, 'tag delete', () => tagView.delete(tag))),
-    vscode.commands.registerCommand('bazaar.tag.forceMove', (tag) => runCommand(output, 'tag force move', () => tagView.create(true, tag))),
-    vscode.commands.registerCommand('bazaar.shelve.refresh', () => runCommand(output, 'shelve refresh', () => shelveView.refresh())),
-    vscode.commands.registerCommand('bazaar.shelve.create', (resource) => runCommand(output, 'shelve create', () => shelveView.create(resource))),
-    vscode.commands.registerCommand('bazaar.shelve.createAll', () => runCommand(output, 'shelve all', () => shelveView.createAll())),
-    vscode.commands.registerCommand('bazaar.shelve.preview', (shelf) => runCommand(output, 'shelve preview', () => shelveView.preview(shelf))),
-    vscode.commands.registerCommand('bazaar.shelve.apply', (shelf) => runCommand(output, 'shelve apply', () => shelveView.apply(shelf))),
-    vscode.commands.registerCommand('bazaar.shelve.keep', (shelf) => runCommand(output, 'shelve keep', () => shelveView.keep(shelf))),
-    vscode.commands.registerCommand('bazaar.shelve.delete', (shelf) => runCommand(output, 'shelve delete', () => shelveView.delete(shelf))),
+    vscode.commands.registerCommand('bazaar.history.refresh', () => runCommand(output, '履歴更新', () => historyView.refresh())),
+    vscode.commands.registerCommand('bazaar.history.search', () => runCommand(output, '履歴検索', () => historyView.search())),
+    vscode.commands.registerCommand('bazaar.history.clearFileFilter', () => runCommand(output, 'ファイル履歴フィルターのクリア', () => historyView.clearFileFilter())),
+    vscode.commands.registerCommand('bazaar.history.showFileHistory', (uri?: vscode.Uri) => runCommand(output, 'ファイル履歴表示', () => historyView.showFileHistory(uri))),
+    vscode.commands.registerCommand('bazaar.history.showCommit', (revision) => runCommand(output, 'コミット表示', () => historyView.showCommit(revision))),
+    vscode.commands.registerCommand('bazaar.history.showCommitDiff', (revision, changedPath?: string) => runCommand(output, 'コミット差分表示', () => historyView.showCommitDiff(revision, changedPath))),
+    vscode.commands.registerCommand('bazaar.history.copyRevisionId', (revision) => runCommand(output, 'リビジョン ID コピー', () => historyView.copyRevisionId(revision))),
+    vscode.commands.registerCommand('bazaar.history.openFileAtRevision', (revision, changedPath?: string) => runCommand(output, '指定リビジョンのファイル表示', () => historyView.openFileAtRevision(revision, changedPath))),
+    vscode.commands.registerCommand('bazaar.blame.toggle', () => runCommand(output, 'blame 表示切替', () => blameController.toggle())),
+    vscode.commands.registerCommand('bazaar.blame.showCommit', () => runCommand(output, 'blame コミット表示', () => blameController.showCommit())),
+    vscode.commands.registerCommand('bazaar.blame.showDiff', () => runCommand(output, 'blame 差分表示', () => blameController.showDiff())),
+    vscode.commands.registerCommand('bazaar.blame.openFileAtRevision', () => runCommand(output, 'blame リビジョンファイル表示', () => blameController.openFileAtRevision())),
+    vscode.commands.registerCommand('bazaar.blame.openLineChangesWithPreviousRevision', () => runCommand(output, '前リビジョンとの行差分表示', () => blameController.openLineChangesWithPreviousRevision())),
+    vscode.commands.registerCommand('bazaar.blame.openLineChangesWithWorkingFile', () => runCommand(output, '作業中ファイルとの行差分表示', () => blameController.openLineChangesWithWorkingFile())),
+    vscode.commands.registerCommand('bazaar.blame.openChangesWithPreviousRevision', () => runCommand(output, '前リビジョンとの差分表示', () => blameController.openChangesWithPreviousRevision())),
+    vscode.commands.registerCommand('bazaar.blame.openChangesWithRevision', () => runCommand(output, 'リビジョンとの差分表示', () => blameController.openChangesWithRevision())),
+    vscode.commands.registerCommand('bazaar.blame.openChangesWithBranchOrTag', () => runCommand(output, 'ブランチまたはタグとの差分表示', () => blameController.openChangesWithBranchOrTag())),
+    vscode.commands.registerCommand('bazaar.blame.quickShowLineCommit', () => runCommand(output, '現在行のコミット表示', () => blameController.quickShowLineCommit())),
+    vscode.commands.registerCommand('bazaar.blame.inspectLineCommitDetails', () => runCommand(output, '現在行のコミット詳細調査', () => blameController.inspectLineCommitDetails())),
+    vscode.window.onDidChangeActiveTextEditor((editor) => runCommand(output, 'blame 更新', () => blameController.update(editor))),
+    vscode.window.onDidChangeTextEditorSelection((event) => runCommand(output, 'blame 選択更新', () => blameController.update(event.textEditor))),
+    vscode.workspace.onDidSaveTextDocument(() => runCommand(output, 'blame 再読み込み', () => blameController.refresh())),
+    vscode.commands.registerCommand('bazaar.branch.refresh', () => runCommand(output, 'ブランチ更新', () => branchView.refresh())),
+    vscode.commands.registerCommand('bazaar.branch.create', () => runCommand(output, 'ブランチ作成', () => branchView.create())),
+    vscode.commands.registerCommand('bazaar.branch.switch', (branch) => runCommand(output, 'ブランチ切替', () => branchView.switch(branch))),
+    vscode.commands.registerCommand('bazaar.branch.switchForce', (branch) => runCommand(output, 'ブランチ強制切替', () => branchView.switch(branch, true))),
+    vscode.commands.registerCommand('bazaar.branch.remove', (branch) => runCommand(output, 'ブランチ削除', () => branchView.remove(branch))),
+    vscode.commands.registerCommand('bazaar.branch.removeForce', (branch) => runCommand(output, 'ブランチ強制削除', () => branchView.remove(branch, true))),
+    vscode.commands.registerCommand('bazaar.tag.refresh', () => runCommand(output, 'タグ更新', () => tagView.refresh())),
+    vscode.commands.registerCommand('bazaar.tag.create', () => runCommand(output, 'タグ作成', () => tagView.create())),
+    vscode.commands.registerCommand('bazaar.tag.delete', (tag) => runCommand(output, 'タグ削除', () => tagView.delete(tag))),
+    vscode.commands.registerCommand('bazaar.tag.forceMove', (tag) => runCommand(output, 'タグ強制移動', () => tagView.create(true, tag))),
+    vscode.commands.registerCommand('bazaar.shelve.refresh', () => runCommand(output, 'シェルブ更新', () => shelveView.refresh())),
+    vscode.commands.registerCommand('bazaar.shelve.create', (resource) => runCommand(output, 'シェルブ作成', () => shelveView.create(resource))),
+    vscode.commands.registerCommand('bazaar.shelve.createAll', () => runCommand(output, 'すべてシェルブ', () => shelveView.createAll())),
+    vscode.commands.registerCommand('bazaar.shelve.preview', (shelf) => runCommand(output, 'シェルブプレビュー', () => shelveView.preview(shelf))),
+    vscode.commands.registerCommand('bazaar.shelve.apply', (shelf) => runCommand(output, 'シェルブ適用', () => shelveView.apply(shelf))),
+    vscode.commands.registerCommand('bazaar.shelve.keep', (shelf) => runCommand(output, 'シェルブ適用と保持', () => shelveView.keep(shelf))),
+    vscode.commands.registerCommand('bazaar.shelve.delete', (shelf) => runCommand(output, 'シェルブ削除', () => shelveView.delete(shelf))),
     vscode.commands.registerCommand('bazaar.graph.open', () => graphView.open()),
-    vscode.commands.registerCommand('bazaar.graph.refresh', () => runCommand(output, 'graph refresh', () => graphView.refresh()))
+    vscode.commands.registerCommand('bazaar.graph.refresh', () => runCommand(output, 'グラフ更新', () => graphView.refresh()))
   );
 
   registerAutoRefresh(context, rootPath, output, async () => {
@@ -142,11 +140,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
 
   await provider.refresh();
-  await runCommand(output, 'initial history refresh', () => historyView.refresh());
-  await runCommand(output, 'initial branch refresh', () => branchView.refresh());
-  await runCommand(output, 'initial tag refresh', () => tagView.refresh());
-  await runCommand(output, 'initial shelve refresh', () => shelveView.refresh());
-  await runCommand(output, 'initial graph refresh', () => graphView.refresh());
+  await runCommand(output, '初期履歴更新', () => historyView.refresh());
+  await runCommand(output, '初期ブランチ更新', () => branchView.refresh());
+  await runCommand(output, '初期タグ更新', () => tagView.refresh());
+  await runCommand(output, '初期シェルブ更新', () => shelveView.refresh());
+  await runCommand(output, '初期グラフ更新', () => graphView.refresh());
 }
 
 export function deactivate(): void {
@@ -166,8 +164,8 @@ async function findBazaarRoot(
   try {
     return await client.root();
   } catch (error) {
-    output.appendLine(`No Bazaar working tree found at ${workspacePath}.`);
-    output.appendLine(`bzr root failed: ${formatError(error)}`);
+    output.appendLine(`${workspacePath} に Bazaar 作業ツリーが見つかりません。`);
+    output.appendLine(`bzr root が失敗しました: ${formatError(error)}`);
     return undefined;
   }
 }
@@ -210,7 +208,7 @@ function registerAutoRefresh(
       clearTimeout(timer);
     }
     timer = setTimeout(() => {
-      void runCommand(output, 'auto refresh', refresh);
+      void runCommand(output, '自動更新', refresh);
     }, debounceMs);
   };
 
@@ -227,13 +225,25 @@ function registerAutoRefresh(
   );
 }
 
+function createBazaarClient(cwd: string, cliPath: string, output: vscode.OutputChannel): BazaarClient {
+  return new BazaarClient({
+    cwd,
+    cliPath,
+    onCommandComplete: (trace) => {
+      for (const line of formatBazaarCommandTrace(trace)) {
+        output.appendLine(line);
+      }
+    }
+  });
+}
+
 async function runCommand(output: vscode.OutputChannel, label: string, command: () => Promise<void> | void): Promise<void> {
   try {
     await command();
   } catch (error) {
-    output.appendLine(`Bazaar ${label} failed: ${formatError(error)}`);
+    output.appendLine(`Bazaar ${label} に失敗しました: ${formatError(error)}`);
     output.show(true);
-    vscode.window.showErrorMessage(`Bazaar ${label} failed. See Bazaar output for details.`);
+    vscode.window.showErrorMessage(`Bazaar ${label} に失敗しました。詳細は Bazaar 出力を確認してください。`);
   }
 }
 

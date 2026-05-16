@@ -1,10 +1,13 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { discoverSiblingBranchMetadata, metadataToBazaarBranch } from '../bazaar/branchMetadata';
 import type { BazaarClient } from '../bazaar/client';
 import type { BazaarBranch } from '../bazaar/types';
 import {
   type DiscoveredBranches,
   includeCheckoutRootBranch,
+  includeLocalBranches,
+  includeRelatedBranches,
   mergeDiscoveredBranches,
   resolveBranchDiscoveryLocations
 } from './branchDiscovery';
@@ -29,12 +32,12 @@ export class BazaarBranchView implements vscode.TreeDataProvider<BazaarBranch>, 
 
   getTreeItem(branch: BazaarBranch): vscode.TreeItem {
     const item = new vscode.TreeItem(branch.name, vscode.TreeItemCollapsibleState.None);
-    item.description = branch.current ? 'current' : branch.path;
+    item.description = branch.current ? '現在' : branch.path;
     item.iconPath = new vscode.ThemeIcon(branch.current ? 'check' : 'git-branch');
     item.contextValue = branch.current ? 'bazaarBranchCurrent' : 'bazaarBranch';
     item.command = {
       command: 'bazaar.branch.switch',
-      title: 'Switch Bazaar Branch',
+      title: 'Bazaar ブランチを切り替え',
       arguments: [branch]
     };
     return item;
@@ -60,23 +63,28 @@ export class BazaarBranchView implements vscode.TreeDataProvider<BazaarBranch>, 
       }
     }
     for (const failure of failures) {
-      this.output?.appendLine(`Unable to load Bazaar branches from ${failure}`);
+      this.output?.appendLine(`${failure} から Bazaar ブランチを読み込めませんでした`);
     }
     if (discoveredBranches.length === 0 && failures.length > 0) {
-      throw new Error('Unable to load Bazaar branches from any discovered branch location.');
+      throw new Error('検出したどのブランチ場所からも Bazaar ブランチを読み込めませんでした。');
     }
-    this.branches = includeCheckoutRootBranch(
+    const localBranches = await this.discoverLocalBranches();
+    this.branches = includeLocalBranches(includeRelatedBranches(
       this.rootPath,
       info,
-      mergeDiscoveredBranches(this.rootPath, discoveredBranches)
-    );
+      includeCheckoutRootBranch(
+        this.rootPath,
+        info,
+        mergeDiscoveredBranches(this.rootPath, discoveredBranches)
+      )
+    ), localBranches);
     this.onDidChangeTreeDataEmitter.fire(undefined);
   }
 
   async create(): Promise<void> {
     const fromLocation = await vscode.window.showInputBox({
-      title: 'Create Bazaar Branch',
-      prompt: 'Source branch/location',
+      title: 'Bazaar ブランチを作成',
+      prompt: '作成元のブランチまたは場所',
       value: '.'
     });
     if (!fromLocation) {
@@ -84,8 +92,8 @@ export class BazaarBranchView implements vscode.TreeDataProvider<BazaarBranch>, 
     }
 
     const toLocation = await vscode.window.showInputBox({
-      title: 'Create Bazaar Branch',
-      prompt: 'Branch folder name. The branch will be created outside the current workspace.',
+      title: 'Bazaar ブランチを作成',
+      prompt: 'ブランチフォルダー名。ブランチは現在のワークスペース外に作成されます。',
       validateInput: validateBranchFolderName
     });
     if (!toLocation) {
@@ -99,24 +107,24 @@ export class BazaarBranchView implements vscode.TreeDataProvider<BazaarBranch>, 
     }
 
     const answer = await vscode.window.showWarningMessage(
-      `Create Bazaar branch ${target.branchName} at ${target.toLocation}?`,
+      `Bazaar ブランチ ${target.branchName} を ${target.toLocation} に作成しますか?`,
       { modal: true },
-      'Create Branch'
+      'ブランチを作成'
     );
-    if (answer !== 'Create Branch') {
+    if (answer !== 'ブランチを作成') {
       return;
     }
 
     await this.client.createBranch(fromLocation, target.toLocation);
     this.extraDiscoveryLocations.add(path.win32.dirname(target.toLocation));
     await this.refresh();
-    vscode.window.showInformationMessage(`Created Bazaar branch ${target.branchName} at ${target.toLocation}.`);
+    vscode.window.showInformationMessage(`Bazaar ブランチ ${target.branchName} を ${target.toLocation} に作成しました。`);
   }
 
   async switch(branch?: BazaarBranch, force = false): Promise<void> {
     const target = branch?.path ?? await vscode.window.showInputBox({
-      title: force ? 'Force Switch Bazaar Branch' : 'Switch Bazaar Branch',
-      prompt: 'Branch/location to switch to'
+      title: force ? 'Bazaar ブランチを強制切替' : 'Bazaar ブランチを切り替え',
+      prompt: '切替先のブランチまたは場所'
     });
     if (!target) {
       return;
@@ -130,11 +138,11 @@ export class BazaarBranchView implements vscode.TreeDataProvider<BazaarBranch>, 
 
     if (force) {
       const answer = await vscode.window.showWarningMessage(
-        `Force switch Bazaar branch to ${action.target}? Local commits can be lost.`,
+        `Bazaar ブランチを ${action.target} に強制切替しますか? ローカルコミットが失われる可能性があります。`,
         { modal: true },
-        'Force Switch'
+        '強制切替'
       );
-      if (answer !== 'Force Switch') {
+      if (answer !== '強制切替') {
         return;
       }
     }
@@ -145,19 +153,19 @@ export class BazaarBranchView implements vscode.TreeDataProvider<BazaarBranch>, 
 
   async remove(branch?: BazaarBranch, force = false): Promise<void> {
     const target = branch?.path ?? await vscode.window.showInputBox({
-      title: force ? 'Force Remove Bazaar Branch' : 'Remove Bazaar Branch',
-      prompt: 'Branch/location to remove'
+      title: force ? 'Bazaar ブランチを強制削除' : 'Bazaar ブランチを削除',
+      prompt: '削除するブランチまたは場所'
     });
     if (!target) {
       return;
     }
 
     const answer = await vscode.window.showWarningMessage(
-      `${force ? 'Force remove' : 'Remove'} Bazaar branch ${target}?`,
+      `Bazaar ブランチ ${target} を${force ? '強制削除' : '削除'}しますか?`,
       { modal: true },
-      force ? 'Force Remove' : 'Remove'
+      force ? '強制削除' : '削除'
     );
-    if (answer !== (force ? 'Force Remove' : 'Remove')) {
+    if (answer !== (force ? '強制削除' : '削除')) {
       return;
     }
 
@@ -174,7 +182,16 @@ export class BazaarBranchView implements vscode.TreeDataProvider<BazaarBranch>, 
     try {
       await refresh();
     } catch (error) {
-      this.output?.appendLine(`Bazaar branch switch refresh failed: ${formatError(error)}`);
+      this.output?.appendLine(`Bazaar ブランチ切替後の更新に失敗しました: ${formatError(error)}`);
+    }
+  }
+
+  private async discoverLocalBranches(): Promise<BazaarBranch[]> {
+    try {
+      return (await discoverSiblingBranchMetadata(this.rootPath)).map(metadataToBazaarBranch);
+    } catch (error) {
+      this.output?.appendLine(`Bazaar ブランチのローカル fallback 検出に失敗しました: ${formatError(error)}`);
+      return [];
     }
   }
 
@@ -182,9 +199,9 @@ export class BazaarBranchView implements vscode.TreeDataProvider<BazaarBranch>, 
     const answer = await vscode.window.showWarningMessage(
       `この VS Code ウィンドウを ${targetPath} に移動します。現在の作業ツリーには bzr switch を実行しません。`,
       { modal: true },
-      'Open Worktree'
+      '作業ツリーを開く'
     );
-    if (answer !== 'Open Worktree') {
+    if (answer !== '作業ツリーを開く') {
       return;
     }
 

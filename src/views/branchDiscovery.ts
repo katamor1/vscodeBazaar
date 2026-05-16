@@ -1,4 +1,5 @@
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { BazaarBranch, BazaarInfo } from '../bazaar/types';
 
 export interface DiscoveredBranches {
@@ -82,6 +83,57 @@ export function includeCheckoutRootBranch(
   ];
 }
 
+export function includeRelatedBranches(
+  rootPath: string,
+  info: BazaarInfo,
+  branches: readonly BazaarBranch[]
+): BazaarBranch[] {
+  const root = normalizePath(rootPath);
+  const rootKey = normalizeForCompare(root);
+  const result = [...branches];
+  const relatedLocations = [info.parentBranch, info.pushBranch];
+
+  for (const location of relatedLocations) {
+    const relatedPath = resolveRelatedBranchPath(root, location);
+    if (!relatedPath) {
+      continue;
+    }
+
+    const key = normalizeForCompare(relatedPath);
+    if (key === rootKey || result.some((branch) => normalizeForCompare(branch.path) === key)) {
+      continue;
+    }
+
+    result.push({
+      name: displayNameFor('', relatedPath),
+      path: relatedPath,
+      current: false
+    });
+  }
+
+  return result;
+}
+
+export function includeLocalBranches(
+  branches: readonly BazaarBranch[],
+  localBranches: readonly BazaarBranch[]
+): BazaarBranch[] {
+  const byPath = new Map<string, BazaarBranch>();
+  for (const branch of branches) {
+    byPath.set(normalizeForCompare(branch.path), branch);
+  }
+  for (const branch of localBranches) {
+    const key = normalizeForCompare(branch.path);
+    const existing = byPath.get(key);
+    if (!existing) {
+      byPath.set(key, branch);
+    } else if (branch.current && !existing.current) {
+      byPath.set(key, { ...existing, current: true });
+    }
+  }
+  return [...byPath.values()];
+}
+
 function normalizeDiscoveredBranch(
   root: string,
   discoveryLocation: string,
@@ -111,6 +163,44 @@ function resolveOptionalLocation(root: string, location: string | undefined): st
 
 function resolveLocation(root: string, location: string): string {
   return normalizePath(path.win32.isAbsolute(location) ? location : path.win32.resolve(root, location));
+}
+
+function resolveRelatedBranchPath(root: string, location: string | undefined): string | undefined {
+  const trimmed = location?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const filePath = fileUrlToPath(trimmed);
+  if (filePath) {
+    return normalizePath(filePath);
+  }
+
+  if (path.win32.isAbsolute(trimmed)) {
+    return normalizePath(trimmed);
+  }
+
+  if (looksLikeRemoteUrl(trimmed)) {
+    return undefined;
+  }
+
+  return normalizePath(path.win32.resolve(root, trimmed));
+}
+
+function fileUrlToPath(location: string): string | undefined {
+  if (!/^file:/i.test(location)) {
+    return undefined;
+  }
+
+  try {
+    return fileURLToPath(location);
+  } catch {
+    return undefined;
+  }
+}
+
+function looksLikeRemoteUrl(location: string): boolean {
+  return /^[a-z][a-z0-9+.-]*:/i.test(location) && !/^[a-z]:[\\/]/i.test(location);
 }
 
 function addUniqueLocation(locations: string[], candidate: string): void {

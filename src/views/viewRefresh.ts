@@ -24,13 +24,13 @@ export interface BazaarViewRefreshFailure {
 
 export function createBranchSwitchRefreshTargets(views: BranchSwitchRefreshViews): BazaarViewRefreshTarget[] {
   return [
-    { label: 'source control', refresh: () => views.sourceControl.refresh() },
+    { label: 'ソース管理', refresh: () => views.sourceControl.refresh() },
     { label: 'blame', refresh: () => views.blame.refresh() },
-    { label: 'history', refresh: () => views.history.refresh() },
-    { label: 'branches', refresh: () => views.branches.refresh() },
-    { label: 'tags', refresh: () => views.tags.refresh() },
-    { label: 'shelves', refresh: () => views.shelves.refresh() },
-    { label: 'graph', refresh: () => views.graph.refresh() }
+    { label: '履歴', refresh: () => views.history.refresh() },
+    { label: 'ブランチ', refresh: () => views.branches.refresh() },
+    { label: 'タグ', refresh: () => views.tags.refresh() },
+    { label: 'シェルブ', refresh: () => views.shelves.refresh() },
+    { label: 'グラフ', refresh: () => views.graph.refresh() }
   ];
 }
 

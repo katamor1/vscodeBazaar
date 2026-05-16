@@ -65,6 +65,10 @@ export function parseInfo(output: string): BazaarInfo {
       info.checkoutRoot = value;
     } else if (key === 'checkout of branch') {
       info.checkoutOfBranch = value;
+    } else if (key === 'parent branch') {
+      info.parentBranch = value;
+    } else if (key === 'push branch') {
+      info.pushBranch = value;
     }
   }
   return info;

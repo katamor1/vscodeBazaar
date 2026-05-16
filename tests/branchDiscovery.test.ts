@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  includeRelatedBranches,
   includeCheckoutRootBranch,
+  includeLocalBranches,
   mergeDiscoveredBranches,
   resolveBranchDiscoveryLocations
 } from '../src/views/branchDiscovery';
@@ -117,6 +119,50 @@ describe('includeCheckoutRootBranch', () => {
       { name: 'trunk', path: 'C:/repo/trunk', current: true }
     ])).toEqual([
       { name: 'trunk', path: 'C:/repo/trunk', current: true }
+    ]);
+  });
+});
+
+describe('includeRelatedBranches', () => {
+  it('adds parent and push branches from Bazaar info when recursive discovery omits them', () => {
+    expect(includeRelatedBranches('C:/repo/branch2', {
+      parentBranch: 'C:/repo/branch1',
+      pushBranch: 'file:///C:/repo/trunk/'
+    }, [
+      { name: 'branch2', path: 'C:/repo/branch2', current: true }
+    ])).toEqual([
+      { name: 'branch2', path: 'C:/repo/branch2', current: true },
+      { name: 'branch1', path: 'C:/repo/branch1', current: false },
+      { name: 'trunk', path: 'C:/repo/trunk', current: false }
+    ]);
+  });
+
+  it('deduplicates related branches and ignores the current branch push location', () => {
+    expect(includeRelatedBranches('C:/repo/branch1', {
+      parentBranch: '../trunk',
+      pushBranch: '.'
+    }, [
+      { name: 'branch1', path: 'C:/repo/branch1', current: true },
+      { name: 'trunk', path: 'C:/repo/trunk', current: false }
+    ])).toEqual([
+      { name: 'branch1', path: 'C:/repo/branch1', current: true },
+      { name: 'trunk', path: 'C:/repo/trunk', current: false }
+    ]);
+  });
+});
+
+describe('includeLocalBranches', () => {
+  it('adds filesystem-discovered sibling branches without duplicating existing paths', () => {
+    expect(includeLocalBranches([
+      { name: 'branch1', path: 'C:/repo/branch1', current: true }
+    ], [
+      { name: 'branch1', path: 'c:/repo/BRANCH1', current: false },
+      { name: 'branch2', path: 'C:/repo/branch2', current: false },
+      { name: 'trunk', path: 'C:/repo/trunk', current: false }
+    ])).toEqual([
+      { name: 'branch1', path: 'C:/repo/branch1', current: true },
+      { name: 'branch2', path: 'C:/repo/branch2', current: false },
+      { name: 'trunk', path: 'C:/repo/trunk', current: false }
     ]);
   });
 });

@@ -28,7 +28,7 @@ export class BazaarRevisionDocumentProvider implements vscode.TextDocumentConten
   async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
     const query = this.readQuery(uri);
     if (!query) {
-      this.output.appendLine(`Ignoring invalid Bazaar revision document URI: ${uri.toString()}`);
+      this.output.appendLine(`不正な Bazaar リビジョンドキュメント URI を無視します: ${uri.toString()}`);
       return '';
     }
     if (query.empty) {
@@ -38,7 +38,7 @@ export class BazaarRevisionDocumentProvider implements vscode.TextDocumentConten
     try {
       return await this.client.catAtRevision(query.revision, query.path);
     } catch (error) {
-      this.output.appendLine(`Unable to read Bazaar revision ${query.revision} for ${query.path}: ${formatError(error)}`);
+      this.output.appendLine(`${query.path} の Bazaar リビジョン ${query.revision} を読み込めませんでした: ${formatError(error)}`);
       return '';
     }
   }

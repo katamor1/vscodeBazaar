@@ -4,13 +4,18 @@ import { buildGraph } from '../bazaar/graphModel';
 import { revisionGraphId } from '../bazaar/revisionSpec';
 import type { BazaarRevision, RevisionGraph } from '../bazaar/types';
 import { resolveGraphRevisionMessage, type GraphMessage } from './graphMessage';
+import { loadBazaarRevisionsWithFallback } from './historyFallback';
 
 export class BazaarGraphView implements vscode.WebviewViewProvider, vscode.Disposable {
   private view: vscode.WebviewView | undefined;
   private revisions: BazaarRevision[] = [];
   private graph: RevisionGraph = { nodes: [], edges: [] };
 
-  constructor(private readonly client: BazaarClient) {}
+  constructor(
+    private readonly rootPath: string,
+    private readonly client: BazaarClient,
+    private readonly output?: vscode.OutputChannel
+  ) {}
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
     this.view = webviewView;
@@ -33,10 +38,15 @@ export class BazaarGraphView implements vscode.WebviewViewProvider, vscode.Dispo
 
   async refresh(): Promise<void> {
     const config = vscode.workspace.getConfiguration('bazaar');
-    this.revisions = await this.client.log({
-      limit: config.get<number>('history.limit', 200),
-      includeMerged: config.get<boolean>('history.includeMerged', true)
-    });
+    this.revisions = await loadBazaarRevisionsWithFallback(
+      this.rootPath,
+      this.client,
+      {
+        limit: config.get<number>('history.limit', 200),
+        includeMerged: config.get<boolean>('history.includeMerged', true)
+      },
+      this.output
+    );
     this.graph = buildGraph(this.revisions);
     this.render();
   }
@@ -126,10 +136,10 @@ function renderGraphHtml(graph: RevisionGraph, revisions: BazaarRevision[]): str
   </style>
 </head>
 <body>
-  <div class="toolbar"><button id="refresh">Refresh</button><button id="diff">Diff Selected</button></div>
+  <div class="toolbar"><button id="refresh">更新</button><button id="diff">選択リビジョンの差分</button></div>
   <div class="layout">
-    <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Bazaar revision graph">${edgeSvg}${nodeSvg}</svg>
-    <aside class="detail" id="detail">Select a revision</aside>
+    <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Bazaar リビジョングラフ">${edgeSvg}${nodeSvg}</svg>
+    <aside class="detail" id="detail">リビジョンを選択してください</aside>
   </div>
   <script>
     const vscode = acquireVsCodeApi();
@@ -151,14 +161,14 @@ function renderGraphHtml(graph: RevisionGraph, revisions: BazaarRevision[]): str
         return;
       }
       const tags = revision.tags.map((tag) => '<span>#' + escapeHtml(tag) + '</span>').join(' ');
-      const parents = revision.parents.length ? revision.parents.map(escapeHtml).join('<br>') : '(none)';
+      const parents = revision.parents.length ? revision.parents.map(escapeHtml).join('<br>') : '(なし)';
       const files = revision.changedPaths.length
         ? revision.changedPaths.map((file) => '<button class="file" data-file="' + escapeHtml(file) + '">' + escapeHtml(file) + '</button>').join('')
-        : '<div class="meta">No changed paths in loaded log data.</div>';
+        : '<div class="meta">読み込んだログデータに変更パスはありません。</div>';
       document.getElementById('detail').innerHTML =
         '<h2>' + escapeHtml(revision.revno + ' ' + firstLine(revision.message)) + '</h2>' +
         '<div class="meta">' + escapeHtml(revision.committer) + '<br>' + escapeHtml(revision.timestamp) + '<br>' + escapeHtml(revision.branchNick || '') + ' ' + tags + '</div>' +
-        '<div class="meta">Parents<br>' + parents + '</div>' +
+        '<div class="meta">親<br>' + parents + '</div>' +
         '<div class="files">' + files + '</div>';
       document.querySelectorAll('.file').forEach((fileButton) => {
         fileButton.addEventListener('click', () => {
@@ -167,7 +177,7 @@ function renderGraphHtml(graph: RevisionGraph, revisions: BazaarRevision[]): str
       });
     }
     function firstLine(value) {
-      return (value || '').split(/\\r?\\n/)[0] || '(no message)';
+      return (value || '').split(/\\r?\\n/)[0] || '(メッセージなし)';
     }
     function escapeHtml(value) {
       return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');

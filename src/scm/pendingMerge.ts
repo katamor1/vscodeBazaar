@@ -7,7 +7,7 @@ export interface PendingMergeForgetPrompt {
 
 export function pendingMergeForgetPrompt(change: BazaarChange | undefined, _rootPath: string): PendingMergeForgetPrompt {
   return {
-    message: 'Forget Bazaar pending merge state without changing files?',
+    message: 'ファイル内容を変更せず、Bazaar の pending merge 状態をクリアしますか?',
     detail: change?.kind === 'pendingMerge' ? change.description : undefined
   };
 }

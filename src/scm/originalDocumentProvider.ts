@@ -45,7 +45,7 @@ export class BazaarOriginalDocumentProvider implements vscode.TextDocumentConten
     try {
       return await this.client.catBasis(relativePath);
     } catch (error) {
-      this.output.appendLine(`Unable to read Bazaar basis for ${relativePath}: ${formatError(error)}`);
+      this.output.appendLine(`${relativePath} の Bazaar basis を読み込めませんでした: ${formatError(error)}`);
       return '';
     }
   }
@@ -58,7 +58,7 @@ export class BazaarOriginalDocumentProvider implements vscode.TextDocumentConten
     const decoded = decodeURIComponent(uri.query);
     const parsed = JSON.parse(decoded) as OriginalQuery;
     if (!parsed.path) {
-      throw new Error('Original Bazaar document URI is missing a path.');
+      throw new Error('元 Bazaar ドキュメント URI にパスがありません。');
     }
     return parsed;
   }

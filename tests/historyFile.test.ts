@@ -23,10 +23,10 @@ describe('resolveFileHistoryTarget', () => {
 
   it('rejects non-file and outside-tree targets with short reasons', () => {
     expect(resolveFileHistoryTarget(rootPath, { scheme: 'untitled', fsPath: '' }, undefined)).toEqual({
-      warning: 'Open a file inside the Bazaar tree first.'
+      warning: '先に Bazaar ツリー内のファイルを開いてください。'
     });
     expect(resolveFileHistoryTarget(rootPath, { scheme: 'file', fsPath: 'C:/other/file.ts' }, undefined)).toEqual({
-      warning: 'The selected file is outside the Bazaar tree.'
+      warning: '選択されたファイルは Bazaar ツリーの外にあります。'
     });
   });
 });

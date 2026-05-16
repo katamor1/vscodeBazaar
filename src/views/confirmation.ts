@@ -6,9 +6,9 @@ export async function confirmDangerousOperation(operation: BazaarDangerousOperat
   const answer = await vscode.window.showWarningMessage(
     `${operation.label}: ${operation.target}`,
     { modal: true },
-    'Continue'
+    '続行'
   );
-  if (answer !== 'Continue') {
+  if (answer !== '続行') {
     return false;
   }
 
@@ -23,7 +23,7 @@ export async function confirmDangerousOperation(operation: BazaarDangerousOperat
 
   const input = await vscode.window.showInputBox({
     title: operation.label,
-    prompt: `Type exactly: ${phrase}`,
+    prompt: `正確に入力してください: ${phrase}`,
     ignoreFocusOut: true
   });
   return confirmationMatches(input, phrase, true);

@@ -90,6 +90,28 @@ describe('BazaarClient', () => {
     ]);
   });
 
+  it('runs history against an explicit fallback branch target', async () => {
+    const calls: string[][] = [];
+    const client = new BazaarClient({
+      cwd: 'C:/repo/trunk',
+      cliPath: 'bzr',
+      run: async (args) => {
+        calls.push([...args]);
+        return { stdout: '<logs></logs>', stderr: '', exitCode: 0 };
+      }
+    });
+
+    await expect(client.logAt('C:/repo/branch1/src/app.ts', {
+      limit: 10,
+      includeMerged: true,
+      match: 'fix'
+    })).resolves.toEqual([]);
+
+    expect(calls).toEqual([
+      ['log', '--xml', '--show-ids', '-v', '--limit', '10', '--include-merged', '--match', 'fix', 'C:/repo/branch1/src/app.ts']
+    ]);
+  });
+
   it('throws with command output when Bazaar exits unsuccessfully', async () => {
     const client = new BazaarClient({
       cwd: 'C:/repo',
@@ -98,6 +120,34 @@ describe('BazaarClient', () => {
     });
 
     await expect(client.status()).rejects.toThrow('failed badly');
+  });
+
+  it('reports the full Bazaar command and response after each invocation', async () => {
+    const traces: Array<{ cwd: string; commandLine: string; result: { stdout: string; stderr: string; exitCode: number } }> = [];
+    const client = new BazaarClient({
+      cwd: 'C:/repo',
+      cliPath: 'C:/Program Files/Bazaar/bzr.exe',
+      run: async () => ({
+        stdout: 'modified:\n  src/app.ts\n',
+        stderr: 'warning: stale lock ignored\n',
+        exitCode: 0
+      }),
+      onCommandComplete: (trace) => traces.push(trace)
+    });
+
+    await client.status();
+
+    expect(traces).toEqual([
+      {
+        cwd: 'C:/repo',
+        commandLine: '"C:/Program Files/Bazaar/bzr.exe" status',
+        result: {
+          stdout: 'modified:\n  src/app.ts\n',
+          stderr: 'warning: stale lock ignored\n',
+          exitCode: 0
+        }
+      }
+    ]);
   });
 
   it('rejects invalid revision specs before invoking Bazaar', async () => {
@@ -290,6 +340,30 @@ describe('BazaarClient', () => {
       ['tags'],
       ['shelve', '--list'],
       ['conflicts', '--text']
+    ]);
+  });
+
+  it('keeps the current branch visible when recursive branch discovery hits Bazaar recursion', async () => {
+    const recursion = 'bzr: ERROR: exceptions.RuntimeError: maximum recursion depth exceeded while calling a Python object';
+    const calls: string[][] = [];
+    const client = new BazaarClient({
+      cwd: 'C:/repo/branch1',
+      cliPath: 'bzr',
+      run: async (args) => {
+        calls.push([...args]);
+        if (args[0] === 'branches') {
+          return { stdout: '', stderr: recursion, exitCode: 3 };
+        }
+        return { stdout: 'branch1\n', stderr: '', exitCode: 0 };
+      }
+    });
+
+    await expect(client.branches('C:/repo')).resolves.toEqual([
+      { name: 'branch1', path: '.', current: true }
+    ]);
+    expect(calls).toEqual([
+      ['branches', '--recursive', 'C:/repo'],
+      ['nick']
     ]);
   });
 

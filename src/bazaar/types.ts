@@ -68,6 +68,8 @@ export interface BazaarInfo {
   repository?: string;
   checkoutRoot?: string;
   checkoutOfBranch?: string;
+  parentBranch?: string;
+  pushBranch?: string;
 }
 
 export interface BazaarAnnotation {

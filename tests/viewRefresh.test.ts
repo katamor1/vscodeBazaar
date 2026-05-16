@@ -49,34 +49,34 @@ describe('createBranchSwitchRefreshTargets', () => {
     });
 
     const targets = createBranchSwitchRefreshTargets({
-      sourceControl: refreshable('source control'),
+      sourceControl: refreshable('ソース管理'),
       blame: refreshable('blame'),
-      history: refreshable('history'),
-      branches: refreshable('branches'),
-      tags: refreshable('tags'),
-      shelves: refreshable('shelves'),
-      graph: refreshable('graph')
+      history: refreshable('履歴'),
+      branches: refreshable('ブランチ'),
+      tags: refreshable('タグ'),
+      shelves: refreshable('シェルブ'),
+      graph: refreshable('グラフ')
     });
 
     expect(targets.map((target) => target.label)).toEqual([
-      'source control',
+      'ソース管理',
       'blame',
-      'history',
-      'branches',
-      'tags',
-      'shelves',
-      'graph'
+      '履歴',
+      'ブランチ',
+      'タグ',
+      'シェルブ',
+      'グラフ'
     ]);
 
     await refreshBazaarViewTargets(targets);
     expect(calls).toEqual([
-      'source control',
+      'ソース管理',
       'blame',
-      'history',
-      'branches',
-      'tags',
-      'shelves',
-      'graph'
+      '履歴',
+      'ブランチ',
+      'タグ',
+      'シェルブ',
+      'グラフ'
     ]);
   });
 });

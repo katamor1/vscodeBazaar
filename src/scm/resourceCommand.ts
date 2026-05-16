@@ -14,7 +14,7 @@ export function createResourceOpenCommand<TUri>(
   if (change.kind === 'pendingMerge') {
     return {
       command: 'bazaar.merge.forgetPending',
-      title: 'Forget Bazaar Pending Merge State',
+      title: 'Bazaar の Pending Merge 状態をクリア',
       arguments: []
     };
   }
@@ -22,14 +22,14 @@ export function createResourceOpenCommand<TUri>(
   if (change.kind === 'unknown') {
     return {
       command: 'vscode.open',
-      title: 'Open Bazaar File',
+      title: 'Bazaar ファイルを開く',
       arguments: [resourceUri]
     };
   }
 
   return {
     command: 'vscode.diff',
-    title: 'Open Bazaar Changes',
+    title: 'Bazaar 変更を開く',
     arguments: [originalUri, resourceUri, `${change.path} (Bazaar)`]
   };
 }

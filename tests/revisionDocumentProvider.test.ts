@@ -39,7 +39,7 @@ describe('BazaarRevisionDocumentProvider', () => {
 
     expect(content).toBe('');
     expect(catAtRevision).not.toHaveBeenCalled();
-    expect(appendLine).toHaveBeenCalledWith(expect.stringContaining('Ignoring invalid Bazaar revision document URI'));
+    expect(appendLine).toHaveBeenCalledWith(expect.stringContaining('不正な Bazaar リビジョンドキュメント URI を無視します'));
   });
 
   it('returns empty content for empty revision query without calling Bazaar', async () => {
@@ -50,7 +50,7 @@ describe('BazaarRevisionDocumentProvider', () => {
 
     expect(content).toBe('');
     expect(catAtRevision).not.toHaveBeenCalled();
-    expect(appendLine).toHaveBeenCalledWith(expect.stringContaining('Ignoring invalid Bazaar revision document URI'));
+    expect(appendLine).toHaveBeenCalledWith(expect.stringContaining('不正な Bazaar リビジョンドキュメント URI を無視します'));
   });
 
   it('catches Bazaar cat failures and logs diagnostics', async () => {
@@ -63,7 +63,7 @@ describe('BazaarRevisionDocumentProvider', () => {
 
     expect(content).toBe('');
     expect(catAtRevision).toHaveBeenCalledWith('1', 'README.md');
-    expect(appendLine).toHaveBeenCalledWith(expect.stringContaining('Unable to read Bazaar revision 1 for README.md: cat failed'));
+    expect(appendLine).toHaveBeenCalledWith(expect.stringContaining('README.md の Bazaar リビジョン 1 を読み込めませんでした: cat failed'));
   });
 });
 

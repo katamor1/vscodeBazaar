@@ -28,7 +28,7 @@ describe('createHistoryCommitDiffPlan', () => {
   it('opens the whole commit diff as a diff document instead of OutputChannel content', () => {
     expect(createHistoryCommitDiffPlan(revision, undefined)).toEqual({
       kind: 'patchDocument',
-      title: 'Bazaar commit diff 12',
+      title: 'Bazaar コミット差分 12',
       revisionSpec: '12'
     });
   });

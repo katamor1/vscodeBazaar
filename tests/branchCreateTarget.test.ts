@@ -28,7 +28,7 @@ describe('resolveBranchCreateTarget', () => {
 
   it('blocks targets that would resolve to the current root even with case differences', () => {
     expect(resolveBranchCreateTarget('C:/Repo/Master', {}, 'master')).toEqual({
-      warning: 'The Bazaar branch destination must be outside the current workspace.'
+      warning: 'Bazaar ブランチの作成先は現在のワークスペース外である必要があります。'
     });
   });
 });
@@ -36,7 +36,7 @@ describe('resolveBranchCreateTarget', () => {
 describe('validateBranchFolderName', () => {
   it('rejects empty, absolute, escaping, nested, and Windows-invalid names', () => {
     for (const value of ['', '../x', 'C:/x', 'feature/foo', 'feature\\foo', 'bad:name']) {
-      expect(validateBranchFolderName(value)).toBe('Enter a simple branch folder name.');
+      expect(validateBranchFolderName(value)).toBe('単純なブランチフォルダー名を入力してください。');
     }
   });
 

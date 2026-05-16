@@ -11,7 +11,7 @@ describe('pendingMergeForgetPrompt', () => {
     };
 
     expect(pendingMergeForgetPrompt(change, 'C:/repo/trunk')).toEqual({
-      message: 'Forget Bazaar pending merge state without changing files?',
+      message: 'ファイル内容を変更せず、Bazaar の pending merge 状態をクリアしますか?',
       detail: 'pending merge tips: (use -v to see all merge revisions)\n  branch1 merge'
     });
   });

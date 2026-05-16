@@ -34,7 +34,7 @@ export function createHistoryCommitDiffPlan(
     }
     return {
       kind: 'patchDocument',
-      title: `Bazaar commit diff ${revisionDisplayLabel(revision)}`,
+      title: `Bazaar コミット差分 ${revisionDisplayLabel(revision)}`,
       revisionSpec
     };
   }

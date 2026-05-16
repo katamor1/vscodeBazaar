@@ -16,12 +16,12 @@ export function resolveFileHistoryTarget(
 ): FileHistoryTarget {
   const targetUri = explicitUri ?? activeUri;
   if (!targetUri || targetUri.scheme !== 'file') {
-    return { warning: 'Open a file inside the Bazaar tree first.' };
+    return { warning: '先に Bazaar ツリー内のファイルを開いてください。' };
   }
 
   const relativePath = path.relative(rootPath, targetUri.fsPath).replace(/\\/g, '/');
   if (!relativePath || relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
-    return { warning: 'The selected file is outside the Bazaar tree.' };
+    return { warning: '選択されたファイルは Bazaar ツリーの外にあります。' };
   }
 
   return { relativePath };
