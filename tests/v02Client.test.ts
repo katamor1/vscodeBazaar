@@ -46,7 +46,7 @@ describe('BazaarClient V0.2 commands', () => {
 
     expect(calls).toEqual([
       ['shelve', '--list'],
-      ['shelve', '-m', 'part one', 'src/app.ts'],
+      ['shelve', '-m', 'part one', '--', 'src/app.ts'],
       ['shelve', '--all', '-m', 'all work'],
       ['unshelve', '1', '--preview'],
       ['unshelve', '1', '--apply'],
@@ -78,7 +78,7 @@ describe('BazaarClient V0.2 commands', () => {
     await client.checkTree();
 
     expect(calls).toEqual([
-      ['resolve', '--take-this', 'src/app.ts'],
+      ['resolve', '--take-this', '--', 'src/app.ts'],
       ['resolve', '--all'],
       ['revert'],
       ['revert', '--forget-merges'],

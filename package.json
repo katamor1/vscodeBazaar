@@ -757,7 +757,9 @@
     "watch": "tsc -watch -p .",
     "test": "vitest run",
     "test:integration": "node ./integration/runTest.js",
-    "package": "npm run compile && vsce package --no-dependencies --allow-missing-repository"
+    "verify:release": "npm run compile && npm test && npm run test:integration && npm audit --omit=dev",
+    "prepackage": "npm run verify:release",
+    "package": "vsce package --no-dependencies --allow-missing-repository"
   },
   "devDependencies": {
     "@types/node": "^22.15.17",

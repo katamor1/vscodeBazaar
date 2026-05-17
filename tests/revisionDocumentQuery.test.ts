@@ -46,8 +46,16 @@ describe('revision document query parsing', () => {
     expect(decodeRevisionDocumentQuery(encodeRevisionDocumentQuery({ path: 'docs\\..\\secret.txt', revision: '1' }))).toBeUndefined();
   });
 
-  it('rejects paths that could be interpreted as Bazaar command options', () => {
-    expect(decodeRevisionDocumentQuery(encodeRevisionDocumentQuery({ path: '--help', revision: '1' }))).toBeUndefined();
-    expect(decodeRevisionDocumentQuery(encodeRevisionDocumentQuery({ path: '-x', revision: '1' }))).toBeUndefined();
+  it('allows option-like paths because Bazaar path arguments are passed after --', () => {
+    expect(decodeRevisionDocumentQuery(encodeRevisionDocumentQuery({ path: '--help', revision: '1' }))).toEqual({
+      path: '--help',
+      revision: '1',
+      empty: false
+    });
+    expect(decodeRevisionDocumentQuery(encodeRevisionDocumentQuery({ path: '-x', revision: '1' }))).toEqual({
+      path: '-x',
+      revision: '1',
+      empty: false
+    });
   });
 });

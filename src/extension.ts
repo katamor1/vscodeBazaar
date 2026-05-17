@@ -2,7 +2,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { BazaarClient } from './bazaar/client';
 import { formatBazaarCommandTrace } from './bazaar/commandTrace';
-import { findDotBzrRoot } from './bazaar/rootFinder';
+import { findFirstBazaarWorkspaceRoot } from './bazaar/workspaceRoot';
 import { UNAVAILABLE_COMMANDS } from './extensionCommands';
 import { BazaarScmProvider } from './scm/bazaarScmProvider';
 import { BazaarGeneratedDocumentProvider } from './scm/generatedDocumentProvider';
@@ -26,17 +26,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const output = vscode.window.createOutputChannel('Bazaar');
   context.subscriptions.push(output);
 
-  const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-  if (!workspaceFolder) {
+  const workspaceFolders = vscode.workspace.workspaceFolders ?? [];
+  if (workspaceFolders.length === 0) {
     output.appendLine('ワークスペースフォルダーが開かれていません。');
     registerUnavailableCommands(context, output, 'ワークスペースフォルダーが開かれていません。');
     return;
   }
 
   const cliPath = vscode.workspace.getConfiguration('bazaar').get<string>('cliPath', 'bzr');
-  const initialClient = createBazaarClient(workspaceFolder.uri.fsPath, cliPath, output);
-
-  const rootPath = await findBazaarRoot(workspaceFolder.uri.fsPath, initialClient, output);
+  const rootPath = await findFirstBazaarWorkspaceRoot(
+    workspaceFolders.map((folder) => folder.uri.fsPath),
+    (workspacePath) => createBazaarClient(workspacePath, cliPath, output),
+    output
+  );
   if (!rootPath) {
     registerUnavailableCommands(context, output, '有効な Bazaar 作業ツリーがありません。');
     return;
@@ -172,25 +174,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 export function deactivate(): void {
   // VS Code disposes registered subscriptions.
-}
-
-async function findBazaarRoot(
-  workspacePath: string,
-  client: BazaarClient,
-  output: vscode.OutputChannel
-): Promise<string | undefined> {
-  const localRoot = await findDotBzrRoot(workspacePath);
-  if (localRoot) {
-    return localRoot;
-  }
-
-  try {
-    return await client.root();
-  } catch (error) {
-    output.appendLine(`${workspacePath} に Bazaar 作業ツリーが見つかりません。`);
-    output.appendLine(`bzr root が失敗しました: ${formatError(error)}`);
-    return undefined;
-  }
 }
 
 function registerUnavailableCommands(

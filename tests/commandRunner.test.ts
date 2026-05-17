@@ -16,7 +16,7 @@ describe('BazaarClient', () => {
     await client.commit('work in progress', ['src/app.ts', 'docs/current spec.md']);
 
     expect(calls).toEqual([
-      ['commit', '-m', 'work in progress', 'src/app.ts', 'docs/current spec.md']
+      ['commit', '-m', 'work in progress', '--', 'src/app.ts', 'docs/current spec.md']
     ]);
   });
 
@@ -53,7 +53,7 @@ describe('BazaarClient', () => {
     await client.prepareIncludedForCommit([{ path: 'notes draft.txt', kind: 'unknown' }]);
 
     expect(calls).toEqual([
-      ['add', 'notes draft.txt']
+      ['add', '--', 'notes draft.txt']
     ]);
   });
 
@@ -68,8 +68,8 @@ describe('BazaarClient', () => {
       }
     });
 
-    await client.log({ limit: 25, includeMerged: true, path: 'src/app.ts' });
-    await client.annotate('src/app.ts');
+    await client.log({ limit: 25, includeMerged: true, path: '--history-file' });
+    await client.annotate('-annotate-file');
     await client.branches('..');
     await client.createBranch('main', '../feature');
     await client.switchBranch('../feature', true);
@@ -78,8 +78,8 @@ describe('BazaarClient', () => {
     await client.deleteTag('v0');
 
     expect(calls).toEqual([
-      ['log', '--xml', '--show-ids', '-v', '--limit', '25', '--include-merged', 'src/app.ts'],
-      ['annotate', '--all', '--long', 'src/app.ts'],
+      ['log', '--xml', '--show-ids', '-v', '--limit', '25', '--include-merged', '--', '--history-file'],
+      ['annotate', '--all', '--long', '--', '-annotate-file'],
       ['branches', '--recursive', '..'],
       ['nick'],
       ['branch', 'main', '../feature'],
@@ -108,7 +108,7 @@ describe('BazaarClient', () => {
     })).resolves.toEqual([]);
 
     expect(calls).toEqual([
-      ['log', '--xml', '--show-ids', '-v', '--limit', '10', '--include-merged', '--match', 'fix', 'C:/repo/branch1/src/app.ts']
+      ['log', '--xml', '--show-ids', '-v', '--limit', '10', '--include-merged', '--match', 'fix', '--', 'C:/repo/branch1/src/app.ts']
     ]);
   });
 
@@ -184,6 +184,44 @@ describe('BazaarClient', () => {
 
     expect(calls).toEqual([
       ['cat', '-r', '7', '--', '--help']
+    ]);
+  });
+
+  it('terminates Bazaar options before passing working-tree paths', async () => {
+    const calls: string[][] = [];
+    const client = new BazaarClient({
+      cwd: 'C:/repo',
+      cliPath: 'bzr',
+      run: async (args) => {
+        calls.push([...args]);
+        return { stdout: '', stderr: '', exitCode: 0 };
+      }
+    });
+
+    await client.prepareIncludedForCommit([{ path: '--new-file', kind: 'unknown' }]);
+    await client.commit('message', ['--committed-file']);
+    await client.revert(['--revert-file']);
+    await client.resolve('--resolved-file');
+    await client.resolveConflict('--conflict-file', 'take-other');
+    await client.catBasis('--basis-file');
+    await client.diff('--diff-file');
+    await client.diffChange('7', '--changed-file');
+    await client.logRevision('7', '--logged-file');
+    await client.annotate('--annotated-file');
+    await client.shelve(['--shelved-file'], 'save it');
+
+    expect(calls).toEqual([
+      ['add', '--', '--new-file'],
+      ['commit', '-m', 'message', '--', '--committed-file'],
+      ['revert', '--', '--revert-file'],
+      ['resolve', '--', '--resolved-file'],
+      ['resolve', '--take-other', '--', '--conflict-file'],
+      ['cat', '-r', '-1', '--', '--basis-file'],
+      ['diff', '--', '--diff-file'],
+      ['diff', '-c', '7', '--', '--changed-file'],
+      ['log', '--xml', '--show-ids', '-v', '-r', '7', '--', '--logged-file'],
+      ['annotate', '--all', '--long', '--', '--annotated-file'],
+      ['shelve', '-m', 'save it', '--', '--shelved-file']
     ]);
   });
 

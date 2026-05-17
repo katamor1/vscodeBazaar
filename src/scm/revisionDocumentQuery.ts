@@ -40,7 +40,7 @@ export function decodeRevisionDocumentQuery(encodedQuery: string): RevisionDocum
   };
 }
 
-function normalizeRelativeDocumentPath(value: unknown): string | undefined {
+export function normalizeRelativeDocumentPath(value: unknown): string | undefined {
   if (typeof value !== 'string') {
     return undefined;
   }
@@ -49,10 +49,6 @@ function normalizeRelativeDocumentPath(value: unknown): string | undefined {
   if (!normalized || path.posix.isAbsolute(normalized) || path.win32.isAbsolute(normalized)) {
     return undefined;
   }
-  if (normalized.startsWith('-')) {
-    return undefined;
-  }
-
   const parts = normalized.split('/');
   if (parts.some((part) => part === '..')) {
     return undefined;

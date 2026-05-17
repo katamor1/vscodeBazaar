@@ -1,10 +1,11 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { BazaarClient } from '../bazaar/client';
-
-interface OriginalQuery {
-  path: string;
-}
+import {
+  type OriginalDocumentQuery,
+  decodeOriginalDocumentQuery,
+  encodeOriginalDocumentQuery
+} from './originalDocumentQuery';
 
 export class BazaarOriginalDocumentProvider implements vscode.TextDocumentContentProvider {
   static readonly scheme = 'bazaar-original';
@@ -19,7 +20,7 @@ export class BazaarOriginalDocumentProvider implements vscode.TextDocumentConten
   ) {}
 
   createUriForPath(relativePath: string): vscode.Uri {
-    const query = encodeURIComponent(JSON.stringify({ path: relativePath } satisfies OriginalQuery));
+    const query = encodeOriginalDocumentQuery({ path: relativePath });
     return vscode.Uri.from({
       scheme: BazaarOriginalDocumentProvider.scheme,
       path: `/${relativePath.replace(/\\/g, '/')}`,
@@ -41,7 +42,12 @@ export class BazaarOriginalDocumentProvider implements vscode.TextDocumentConten
   }
 
   async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
-    const relativePath = this.readQuery(uri).path;
+    const query = this.readQuery(uri);
+    if (!query) {
+      this.output.appendLine(`不正な Bazaar 元ドキュメント URI を無視します: ${uri.toString()}`);
+      return '';
+    }
+    const relativePath = query.path;
     try {
       return await this.client.catBasis(relativePath);
     } catch (error) {
@@ -54,13 +60,8 @@ export class BazaarOriginalDocumentProvider implements vscode.TextDocumentConten
     this.onDidChangeEmitter.dispose();
   }
 
-  private readQuery(uri: vscode.Uri): OriginalQuery {
-    const decoded = decodeURIComponent(uri.query);
-    const parsed = JSON.parse(decoded) as OriginalQuery;
-    if (!parsed.path) {
-      throw new Error('元 Bazaar ドキュメント URI にパスがありません。');
-    }
-    return parsed;
+  private readQuery(uri: vscode.Uri): OriginalDocumentQuery | undefined {
+    return decodeOriginalDocumentQuery(uri.query);
   }
 }
 

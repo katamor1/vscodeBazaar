@@ -165,4 +165,14 @@ describe('extension command registration', () => {
       group: expect.stringMatching(/^navigation/)
     }));
   });
+
+  it('keeps package behind the full release verification gate', () => {
+    const scripts = (JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8')) as {
+      scripts?: Record<string, string>;
+    }).scripts ?? {};
+
+    expect(scripts['verify:release']).toBe('npm run compile && npm test && npm run test:integration && npm audit --omit=dev');
+    expect(scripts.prepackage).toBe('npm run verify:release');
+    expect(scripts.package).toBe('vsce package --no-dependencies --allow-missing-repository');
+  });
 });

@@ -124,7 +124,7 @@ npm audit --omit=dev
 npm run package
 ```
 
-このローカル VSIX リリースラインでは、`npm run package` により `vscode-bazaar-0.2.9.vsix` が生成されます。
+`npm run package` は `prepackage` により `npm run compile`、`npm test`、`npm run test:integration`、`npm audit --omit=dev` を先に実行します。このローカル VSIX リリースラインでは、`npm run package` により `vscode-bazaar-0.2.9.vsix` が生成されます。
 
 ## 補足
 

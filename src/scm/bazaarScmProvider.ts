@@ -21,6 +21,11 @@ type ConflictResolutionAction =
   | 'take-both-this-first'
   | 'take-both-this-last';
 
+interface PreviewedUncommit {
+  revision?: string;
+  targetLabel: string;
+}
+
 export class BazaarResourceState implements vscode.SourceControlResourceState {
   readonly resourceUri: vscode.Uri;
   readonly command: vscode.Command;
@@ -67,7 +72,7 @@ export class BazaarScmProvider implements vscode.Disposable {
   private currentChanges: BazaarChange[] = [];
   private currentConflicts: BazaarConflict[] = [];
   private previewedCleanTreeKinds: BazaarCleanTreeKind[] = [];
-  private previewedUncommitRevision: string | undefined;
+  private previewedUncommit: PreviewedUncommit | undefined;
 
   constructor(
     private readonly rootPath: string,
@@ -458,32 +463,44 @@ export class BazaarScmProvider implements vscode.Disposable {
     });
   }
 
-  async previewUncommit(): Promise<void> {
+  async previewUncommit(): Promise<boolean> {
     const revision = await vscode.window.showInputBox({
       title: 'Bazaar uncommit のプレビュー',
       prompt: 'ブランチに残すリビジョン。空欄の場合は最後のリビジョン削除をプレビューします。'
     });
     if (revision === undefined) {
-      return;
+      return false;
     }
-    this.previewedUncommitRevision = revision.trim() || undefined;
-    const content = await this.client.uncommitDryRun(this.previewedUncommitRevision);
+    const revisionSpec = revision.trim() || undefined;
+    const content = await this.client.uncommitDryRun(revisionSpec);
+    this.previewedUncommit = {
+      revision: revisionSpec,
+      targetLabel: revisionSpec ?? '最後のリビジョン'
+    };
     const document = await this.generatedProvider.openDocument('Bazaar uncommit プレビュー', content, 'text');
     await vscode.window.showTextDocument(document, { preview: true });
+    return true;
   }
 
   async runUncommit(): Promise<void> {
-    if (this.previewedUncommitRevision === undefined) {
-      await this.previewUncommit();
+    if (!this.previewedUncommit) {
+      const previewed = await this.previewUncommit();
+      if (!previewed) {
+        return;
+      }
     }
-    const target = this.previewedUncommitRevision ?? '最後のリビジョン';
+    const previewedUncommit = this.previewedUncommit;
+    if (!previewedUncommit) {
+      return;
+    }
+    const target = previewedUncommit.targetLabel;
     if (!(await confirmDangerousOperation({ id: 'uncommit', label: 'Bazaar リビジョンを uncommit', target }))) {
       return;
     }
 
     await this.runWithProgress('uncommit', 'Bazaar uncommit を実行中', async () => {
-      await this.client.uncommitRun(this.previewedUncommitRevision);
-      this.previewedUncommitRevision = undefined;
+      await this.client.uncommitRun(previewedUncommit.revision);
+      this.previewedUncommit = undefined;
       await this.refresh();
     });
   }

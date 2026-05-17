@@ -105,7 +105,7 @@ export class BazaarClient {
       .map((change) => change.path);
 
     if (unknownPaths.length > 0) {
-      await this.checked(['add', ...unknownPaths]);
+      await this.checked(['add', ...pathArgs(unknownPaths)]);
     }
   }
 
@@ -114,7 +114,7 @@ export class BazaarClient {
       throw new Error('No included files to commit.');
     }
 
-    await this.checked(['commit', '-m', message, ...paths]);
+    await this.checked(['commit', '-m', message, ...pathArgs(paths)]);
   }
 
   async revert(paths: readonly string[]): Promise<void> {
@@ -122,7 +122,7 @@ export class BazaarClient {
       throw new Error('No files to revert.');
     }
 
-    await this.checked(['revert', ...paths]);
+    await this.checked(['revert', ...pathArgs(paths)]);
   }
 
   async pull(): Promise<void> {
@@ -152,11 +152,11 @@ export class BazaarClient {
   }
 
   async resolve(path: string): Promise<void> {
-    await this.checked(['resolve', path]);
+    await this.checked(['resolve', ...pathArgs([path])]);
   }
 
   async resolveConflict(path: string, action: BazaarConflictAction = 'done'): Promise<void> {
-    await this.checked(['resolve', `--${action}`, path]);
+    await this.checked(['resolve', `--${action}`, ...pathArgs([path])]);
   }
 
   async resolveAll(): Promise<void> {
@@ -168,7 +168,7 @@ export class BazaarClient {
   }
 
   async catBasis(path: string): Promise<string> {
-    const result = await this.checked(['cat', '-r', '-1', path]);
+    const result = await this.checked(['cat', '-r', '-1', ...pathArgs([path])]);
     return result.stdout;
   }
 
@@ -179,14 +179,14 @@ export class BazaarClient {
   }
 
   async diff(path: string): Promise<string> {
-    const result = await this.checked(['diff', path], [0, 1]);
+    const result = await this.checked(['diff', ...pathArgs([path])], [0, 1]);
     return result.stdout || result.stderr;
   }
 
   async diffChange(revision: string, path?: string): Promise<string> {
     const args = ['diff', '-c', requireRevisionSpec(revision)];
     if (path) {
-      args.push(path);
+      args.push(...pathArgs([path]));
     }
     const result = await this.checked(args, [0, 1]);
     return result.stdout || result.stderr;
@@ -219,7 +219,7 @@ export class BazaarClient {
   async logRevision(revision: string, path?: string): Promise<BazaarRevision | undefined> {
     const args = ['log', '--xml', '--show-ids', '-v', '-r', requireRevisionSpec(revision)];
     if (path) {
-      args.push(path);
+      args.push(...pathArgs([path]));
     }
     try {
       const result = await this.checked(args);
@@ -233,7 +233,7 @@ export class BazaarClient {
   }
 
   async annotate(path: string): Promise<BazaarAnnotation[]> {
-    const result = await this.checked(['annotate', '--all', '--long', path]);
+    const result = await this.checked(['annotate', '--all', '--long', ...pathArgs([path])]);
     return parseAnnotations(result.stdout);
   }
 
@@ -269,7 +269,7 @@ export class BazaarClient {
     if (message) {
       args.push('-m', message);
     }
-    args.push(...paths);
+    args.push(...pathArgs(paths));
     await this.checked(args);
   }
 
@@ -566,11 +566,15 @@ function logArgs(options: BazaarLogOptions, target?: string): string[] {
     args.push('--match', options.match);
   }
   if (target) {
-    args.push(target);
+    args.push(...pathArgs([target]));
   } else if (options.path) {
-    args.push(options.path);
+    args.push(...pathArgs([options.path]));
   }
   return args;
+}
+
+function pathArgs(paths: readonly string[]): string[] {
+  return paths.length > 0 ? ['--', ...paths] : [];
 }
 
 function runProcess(cliPath: string, args: readonly string[], cwd: string): Promise<CommandResult> {

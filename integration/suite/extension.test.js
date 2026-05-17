@@ -1,8 +1,9 @@
 const assert = require('node:assert/strict');
+const path = require('node:path');
 const vscode = require('vscode');
 const packageJson = require('../../package.json');
 
-module.exports = {
+const noBazaarTests = {
   'activates in a non-Bazaar workspace': async () => {
     const extension = vscode.extensions.getExtension('local.vscode-bazaar');
     assert.ok(extension, 'extension should be discoverable by publisher/name');
@@ -34,6 +35,52 @@ module.exports = {
     }
   }
 };
+
+const bazaarTests = {
+  'activates in a Bazaar workspace': async () => {
+    const extension = vscode.extensions.getExtension('local.vscode-bazaar');
+    assert.ok(extension, 'extension should be discoverable by publisher/name');
+
+    await extension.activate();
+
+    assert.equal(extension.isActive, true);
+  },
+
+  'refreshes Bazaar-backed views and source-control commands': async () => {
+    const extension = vscode.extensions.getExtension('local.vscode-bazaar');
+    await extension.activate();
+
+    const workspacePath = process.env.BAZAAR_TEST_WORKSPACE;
+    assert.ok(workspacePath, 'BAZAAR_TEST_WORKSPACE should be set');
+    const document = await vscode.workspace.openTextDocument(vscode.Uri.file(path.join(workspacePath, 'README.txt')));
+    await vscode.window.showTextDocument(document);
+
+    for (const command of [
+      'bazaar.refresh',
+      'bazaar.history.refresh',
+      'bazaar.history.showFileHistory',
+      'bazaar.branch.refresh',
+      'bazaar.tag.refresh',
+      'bazaar.shelve.refresh',
+      'bazaar.graph.refresh',
+      'bazaar.explore.refresh',
+      'bazaar.includeAll',
+      'bazaar.openResourceDiff'
+    ]) {
+      const args = command === 'bazaar.history.showFileHistory'
+        ? [document.uri]
+        : [];
+      await assert.doesNotReject(
+        () => vscode.commands.executeCommand(command, ...args),
+        `${command} should not reject in a Bazaar workspace`
+      );
+    }
+  }
+};
+
+module.exports = process.env.BAZAAR_INTEGRATION_MODE === 'bazaar'
+  ? bazaarTests
+  : noBazaarTests;
 
 function dummyArgsForCommand(command) {
   if (command === 'bazaar.history.showFileHistory') {
