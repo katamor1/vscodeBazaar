@@ -1,5 +1,8 @@
 export const ALWAYS_AVAILABLE_COMMANDS = [
-  'bazaar.openOutput'
+  'bazaar.openOutput',
+  'bazaar.enableForWorkspace',
+  'bazaar.disableForWorkspace',
+  'bazaar.trace.openLast'
 ] as const;
 
 export const UNAVAILABLE_COMMANDS = [
@@ -67,5 +70,6 @@ export const UNAVAILABLE_COMMANDS = [
   'bazaar.shelve.keep',
   'bazaar.shelve.delete',
   'bazaar.graph.open',
+  'bazaar.graph.openEditor',
   'bazaar.graph.refresh'
 ] as const;

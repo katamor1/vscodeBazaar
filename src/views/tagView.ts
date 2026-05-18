@@ -6,6 +6,8 @@ export class BazaarTagView implements vscode.TreeDataProvider<BazaarTag>, vscode
   private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<BazaarTag | undefined>();
   readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
   private tags: BazaarTag[] = [];
+  private loaded = false;
+  private loading = false;
 
   constructor(private readonly client: BazaarClient) {}
 
@@ -18,12 +20,28 @@ export class BazaarTagView implements vscode.TreeDataProvider<BazaarTag>, vscode
   }
 
   getChildren(): BazaarTag[] {
+    if (!this.loaded) {
+      void this.ensureLoaded();
+    }
     return this.tags;
   }
 
   async refresh(): Promise<void> {
-    this.tags = await this.client.tags();
-    this.onDidChangeTreeDataEmitter.fire(undefined);
+    this.loading = true;
+    try {
+      this.tags = await this.client.tags();
+      this.loaded = true;
+      this.onDidChangeTreeDataEmitter.fire(undefined);
+    } finally {
+      this.loading = false;
+    }
+  }
+
+  async ensureLoaded(): Promise<void> {
+    if (this.loaded || this.loading) {
+      return;
+    }
+    await this.refresh();
   }
 
   async create(force = false, existing?: BazaarTag): Promise<void> {

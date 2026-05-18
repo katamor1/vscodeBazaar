@@ -8,20 +8,27 @@ async function main() {
   const extensionDevelopmentPath = path.resolve(__dirname, '..');
   const extensionTestsPath = path.resolve(__dirname, 'suite');
   const vscodeExecutablePath = findLocalVSCodeExecutable();
+  const noBazaarWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), 'vscode-bazaar-no-bazaar-workspace-'));
 
-  await runIntegrationSession({
-    extensionDevelopmentPath,
-    extensionTestsPath,
-    vscodeExecutablePath,
-    workspacePath: path.resolve(__dirname, 'fixtures', 'no-bazaar'),
-    env: { BAZAAR_INTEGRATION_MODE: 'no-bazaar' }
-  });
+  try {
+    await runIntegrationSession({
+      extensionDevelopmentPath,
+      extensionTestsPath,
+      vscodeExecutablePath,
+      workspacePath: noBazaarWorkspace,
+      env: { BAZAAR_INTEGRATION_MODE: 'no-bazaar' }
+    });
+  } finally {
+    removeTemporaryDirectory(noBazaarWorkspace);
+  }
 
   const bzrPath = findBazaarExecutable();
   if (!bzrPath) {
     console.log('Skipping Bazaar-backed integration tests because bzr was not found on PATH.');
     return;
   }
+
+  await delay(2000);
 
   const bazaarWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), 'vscode-bazaar-bzr-workspace-'));
   try {
@@ -63,6 +70,10 @@ async function runIntegrationSession({
         '--new-window',
         `--user-data-dir=${userDataDir}`,
         `--extensions-dir=${extensionsDir}`,
+        '--disable-extensions',
+        '--disable-updates',
+        '--disable-crash-reporter',
+        '--disable-gpu',
         '--disable-workspace-trust',
         '--skip-welcome'
       ]
@@ -76,6 +87,10 @@ main().catch((error) => {
   console.error(error);
   process.exit(1);
 });
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function findLocalVSCodeExecutable() {
   if (process.env.VSCODE_TEST_EXECUTABLE_PATH) {

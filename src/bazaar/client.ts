@@ -31,12 +31,14 @@ import { requireRevisionSpec } from './revisionSpec';
 export interface BazaarClientOptions {
   cwd: string;
   cliPath: string;
+  timeoutMs?: number;
   run?: RunCommand;
   onCommandComplete?: (trace: BazaarCommandTrace) => void;
 }
 
 export interface BazaarCommandTrace {
   cwd: string;
+  args: readonly string[];
   commandLine: string;
   result: CommandResult;
 }
@@ -46,6 +48,7 @@ export interface BazaarLogOptions {
   includeMerged?: boolean;
   path?: string;
   match?: string;
+  verbose?: boolean;
 }
 
 export interface BazaarCommitOptions {
@@ -67,7 +70,7 @@ export class BazaarClient {
   private commandQueue: Promise<void> = Promise.resolve();
 
   constructor(private readonly options: BazaarClientOptions) {
-    this.runCommand = options.run ?? ((args) => runProcess(options.cliPath, args, options.cwd));
+    this.runCommand = options.run ?? ((args) => runProcess(options.cliPath, args, options.cwd, options.timeoutMs));
   }
 
   async root(): Promise<string> {
@@ -485,6 +488,7 @@ export class BazaarClient {
     try {
       this.options.onCommandComplete?.({
         cwd: this.options.cwd,
+        args,
         commandLine: formatBazaarCommandLine(this.options.cliPath, args),
         result
       });
@@ -555,7 +559,10 @@ function uncommitArgs(dryRun: boolean, revision?: string): string[] {
 }
 
 function logArgs(options: BazaarLogOptions, target?: string): string[] {
-  const args = ['log', '--xml', '--show-ids', '-v'];
+  const args = ['log', '--xml', '--show-ids'];
+  if (options.verbose) {
+    args.push('-v');
+  }
   if (options.limit) {
     args.push('--limit', String(options.limit));
   }
@@ -577,7 +584,7 @@ function pathArgs(paths: readonly string[]): string[] {
   return paths.length > 0 ? ['--', ...paths] : [];
 }
 
-function runProcess(cliPath: string, args: readonly string[], cwd: string): Promise<CommandResult> {
+function runProcess(cliPath: string, args: readonly string[], cwd: string, timeoutMs?: number): Promise<CommandResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(cliPath, args, {
       cwd,
@@ -586,6 +593,14 @@ function runProcess(cliPath: string, args: readonly string[], cwd: string): Prom
 
     const stdoutChunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];
+    let settled = false;
+    let killedForTimeout = false;
+    const timeout = timeoutMs && timeoutMs > 0
+      ? setTimeout(() => {
+          killedForTimeout = true;
+          child.kill();
+        }, timeoutMs)
+      : undefined;
 
     child.stdout.on('data', (chunk: Buffer) => {
       stdoutChunks.push(chunk);
@@ -593,11 +608,37 @@ function runProcess(cliPath: string, args: readonly string[], cwd: string): Prom
     child.stderr.on('data', (chunk: Buffer) => {
       stderrChunks.push(chunk);
     });
-    child.on('error', reject);
+    child.on('error', (error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+      reject(error);
+    });
     child.on('close', (exitCode) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+      const stdout = decodeBazaarOutput(Buffer.concat(stdoutChunks));
+      const stderr = decodeBazaarOutput(Buffer.concat(stderrChunks));
+      if (killedForTimeout) {
+        resolve({
+          stdout,
+          stderr: [stderr.trimEnd(), `Bazaar command timed out after ${timeoutMs}ms.`].filter(Boolean).join('\n'),
+          exitCode: 124
+        });
+        return;
+      }
       resolve({
-        stdout: decodeBazaarOutput(Buffer.concat(stdoutChunks)),
-        stderr: decodeBazaarOutput(Buffer.concat(stderrChunks)),
+        stdout,
+        stderr,
         exitCode: exitCode ?? 1
       });
     });

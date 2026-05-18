@@ -11,7 +11,7 @@ import {
   type BazaarExploreModel,
   type BazaarExploreSnapshot
 } from './exploreSnapshot';
-import { loadBazaarRevisionsWithFallback } from './historyFallback';
+import { BazaarRevisionCache } from './revisionCache';
 
 type ExploreMessage =
   | { command: 'refresh' }
@@ -32,7 +32,9 @@ export class BazaarExploreView implements vscode.WebviewViewProvider, vscode.Dis
 
   constructor(
     private readonly rootPath: string,
-    private readonly client: BazaarClient,
+    private readonly statusClient: BazaarClient,
+    private readonly metadataClient: BazaarClient,
+    private readonly revisionCache: BazaarRevisionCache,
     private readonly output?: vscode.OutputChannel
   ) {
     this.snapshot = createEmptyBazaarExploreSnapshot(rootPath);
@@ -55,6 +57,7 @@ export class BazaarExploreView implements vscode.WebviewViewProvider, vscode.Dis
     const historyLimit = Math.min(config.get<number>('history.limit', 200), maxExploreRevisions);
     const includeMerged = config.get<boolean>('history.includeMerged', true);
     const expandUnknowns = config.get<boolean>('unknown.expandDirectories', true);
+    const maxExpandedFiles = config.get<number>('unknown.maxExpandedFiles', 1000);
 
     const [
       changes,
@@ -66,23 +69,20 @@ export class BazaarExploreView implements vscode.WebviewViewProvider, vscode.Dis
       info
     ] = await Promise.all([
       this.loadPart('status', [], async () => {
-        const rawChanges = await this.client.status();
-        return expandUnknowns ? expandUnknownDirectories(this.rootPath, rawChanges) : rawChanges;
+        const rawChanges = await this.statusClient.status();
+        return expandUnknowns ? expandUnknownDirectories(this.rootPath, rawChanges, { maxExpandedFiles }) : rawChanges;
       }),
-      this.loadPart('conflicts', [], () => this.client.conflicts()),
-      this.loadPart('branches', [], () => this.client.branches()),
-      this.loadPart('tags', [], () => this.client.tags()),
-      this.loadPart('shelves', [], () => this.client.shelves()),
-      this.loadPart('history', [], () => loadBazaarRevisionsWithFallback(
-        this.rootPath,
-        this.client,
+      this.loadPart('conflicts', [], () => this.statusClient.conflicts()),
+      this.loadPart('branches', [], () => this.metadataClient.branches()),
+      this.loadPart('tags', [], () => this.metadataClient.tags()),
+      this.loadPart('shelves', [], () => this.metadataClient.shelves()),
+      this.loadPart('history', [], () => this.revisionCache.get(
         {
           limit: historyLimit,
           includeMerged
-        },
-        this.output
+        }
       )),
-      this.loadPart('info', {}, () => this.client.info())
+      this.loadPart('info', {}, () => this.metadataClient.info())
     ]);
 
     const errors = [changes, conflicts, branches, tags, shelves, revisions, info]
@@ -111,6 +111,10 @@ export class BazaarExploreView implements vscode.WebviewViewProvider, vscode.Dis
 
   dispose(): void {
     this.view = undefined;
+  }
+
+  isVisible(): boolean {
+    return this.view?.visible ?? false;
   }
 
   private async handleMessage(message: ExploreMessage): Promise<void> {

@@ -21,6 +21,8 @@ export class BazaarBranchView implements vscode.TreeDataProvider<BazaarBranch>, 
   private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<BazaarBranch | undefined>();
   readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
   private branches: BazaarBranch[] = [];
+  private loaded = false;
+  private loading = false;
   private readonly extraDiscoveryLocations = new Set<string>();
 
   constructor(
@@ -44,41 +46,61 @@ export class BazaarBranchView implements vscode.TreeDataProvider<BazaarBranch>, 
   }
 
   getChildren(): BazaarBranch[] {
+    if (!this.loaded) {
+      void this.ensureLoaded();
+    }
     return this.branches;
   }
 
   async refresh(): Promise<void> {
-    const info = await this.client.info();
-    const locations = resolveBranchDiscoveryLocations(this.rootPath, info, [...this.extraDiscoveryLocations]);
-    const discoveredBranches: DiscoveredBranches[] = [];
-    const failures: string[] = [];
-    for (const location of locations) {
-      try {
-        discoveredBranches.push({
-          location,
-          branches: await this.client.branches(location)
-        });
-      } catch (error) {
-        failures.push(`${location}: ${formatError(error)}`);
+    this.loading = true;
+    try {
+      const info = await this.client.info();
+      const locations = resolveBranchDiscoveryLocations(this.rootPath, info, [...this.extraDiscoveryLocations]);
+      const discoveredBranches: DiscoveredBranches[] = [];
+      const failures: string[] = [];
+      for (const location of locations) {
+        try {
+          discoveredBranches.push({
+            location,
+            branches: await this.client.branches(location)
+          });
+        } catch (error) {
+          failures.push(`${location}: ${formatError(error)}`);
+        }
       }
-    }
-    for (const failure of failures) {
-      this.output?.appendLine(`${failure} から Bazaar ブランチを読み込めませんでした`);
-    }
-    if (discoveredBranches.length === 0 && failures.length > 0) {
-      throw new Error('検出したどのブランチ場所からも Bazaar ブランチを読み込めませんでした。');
-    }
-    const localBranches = await this.discoverLocalBranches();
-    this.branches = includeLocalBranches(includeRelatedBranches(
-      this.rootPath,
-      info,
-      includeCheckoutRootBranch(
+      for (const failure of failures) {
+        this.output?.appendLine(`${failure} から Bazaar ブランチを読み込めませんでした`);
+      }
+      if (discoveredBranches.length === 0 && failures.length > 0) {
+        throw new Error('検出したどのブランチ場所からも Bazaar ブランチを読み込めませんでした。');
+      }
+      const localBranches = await this.discoverLocalBranches();
+      this.branches = includeLocalBranches(includeRelatedBranches(
         this.rootPath,
         info,
-        mergeDiscoveredBranches(this.rootPath, discoveredBranches)
-      )
-    ), localBranches);
-    this.onDidChangeTreeDataEmitter.fire(undefined);
+        includeCheckoutRootBranch(
+          this.rootPath,
+          info,
+          mergeDiscoveredBranches(this.rootPath, discoveredBranches)
+        )
+      ), localBranches);
+      this.loaded = true;
+      this.onDidChangeTreeDataEmitter.fire(undefined);
+    } finally {
+      this.loading = false;
+    }
+  }
+
+  async ensureLoaded(): Promise<void> {
+    if (this.loaded || this.loading) {
+      return;
+    }
+    try {
+      await this.refresh();
+    } finally {
+      this.loading = false;
+    }
   }
 
   async create(): Promise<void> {

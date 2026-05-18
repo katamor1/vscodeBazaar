@@ -78,7 +78,7 @@ describe('BazaarClient', () => {
     await client.deleteTag('v0');
 
     expect(calls).toEqual([
-      ['log', '--xml', '--show-ids', '-v', '--limit', '25', '--include-merged', '--', '--history-file'],
+      ['log', '--xml', '--show-ids', '--limit', '25', '--include-merged', '--', '--history-file'],
       ['annotate', '--all', '--long', '--', '-annotate-file'],
       ['branches', '--recursive', '..'],
       ['nick'],
@@ -108,9 +108,30 @@ describe('BazaarClient', () => {
     })).resolves.toEqual([]);
 
     expect(calls).toEqual([
-      ['log', '--xml', '--show-ids', '-v', '--limit', '10', '--include-merged', '--match', 'fix', '--', 'C:/repo/branch1/src/app.ts']
+      ['log', '--xml', '--show-ids', '--limit', '10', '--include-merged', '--match', 'fix', '--', 'C:/repo/branch1/src/app.ts']
     ]);
   });
+
+  it('only requests verbose history output when explicitly asked', async () => {
+    const calls: string[][] = [];
+    const client = new BazaarClient({
+      cwd: 'C:/repo',
+      cliPath: 'bzr',
+      run: async (args) => {
+        calls.push([...args]);
+        return { stdout: '<logs></logs>', stderr: '', exitCode: 0 };
+      }
+    });
+
+    await client.log({ limit: 5 });
+    await client.log({ limit: 5, verbose: true });
+
+    expect(calls).toEqual([
+      ['log', '--xml', '--show-ids', '--limit', '5'],
+      ['log', '--xml', '--show-ids', '-v', '--limit', '5']
+    ]);
+  });
+
 
   it('throws with command output when Bazaar exits unsuccessfully', async () => {
     const client = new BazaarClient({
@@ -123,7 +144,7 @@ describe('BazaarClient', () => {
   });
 
   it('reports the full Bazaar command and response after each invocation', async () => {
-    const traces: Array<{ cwd: string; commandLine: string; result: { stdout: string; stderr: string; exitCode: number } }> = [];
+    const traces: Array<{ cwd: string; args: readonly string[]; commandLine: string; result: { stdout: string; stderr: string; exitCode: number } }> = [];
     const client = new BazaarClient({
       cwd: 'C:/repo',
       cliPath: 'C:/Program Files/Bazaar/bzr.exe',
@@ -140,6 +161,7 @@ describe('BazaarClient', () => {
     expect(traces).toEqual([
       {
         cwd: 'C:/repo',
+        args: ['status'],
         commandLine: '"C:/Program Files/Bazaar/bzr.exe" status',
         result: {
           stdout: 'modified:\n  src/app.ts\n',
@@ -373,7 +395,7 @@ describe('BazaarClient', () => {
 
     expect(calls).toEqual([
       ['conflicts'],
-      ['log', '--xml', '--show-ids', '-v', '--limit', '200', '--include-merged'],
+      ['log', '--xml', '--show-ids', '--limit', '200', '--include-merged'],
       ['info'],
       ['tags'],
       ['shelve', '--list'],

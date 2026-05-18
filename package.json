@@ -2,7 +2,7 @@
   "name": "vscode-bazaar",
   "displayName": "Bazaar SCM",
   "description": "Visual Studio Code で Bazaar の状態、履歴、グラフ、blame、ブランチ、タグ、シェルブ、競合、差分を扱う SCM 拡張です。",
-  "version": "0.2.9",
+  "version": "0.2.10",
   "publisher": "local",
   "license": "UNLICENSED",
   "engines": {
@@ -71,6 +71,69 @@
           "type": "boolean",
           "default": true,
           "description": "clean-tree、uncommit、break-lock、競合の一括操作など破壊的な Bazaar 操作の前に、正確な入力確認を要求します。"
+        },
+        "bazaar.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "このワークスペースで Bazaar 拡張機能を有効にします。無効時は専用ビューと操作を隠します。"
+        },
+        "bazaar.command.timeoutMs": {
+          "type": "number",
+          "default": 30000,
+          "minimum": 1000,
+          "description": "Bazaar コマンドのタイムアウト時間をミリ秒で指定します。"
+        },
+        "bazaar.trace.mode": {
+          "type": "string",
+          "default": "summary",
+          "enum": [
+            "off",
+            "summary",
+            "truncated",
+            "full"
+          ],
+          "description": "Bazaar コマンドトレースの出力方式。summary は本文を省略し、truncated は一部のみ出力し、full は全文出力します。"
+        },
+        "bazaar.trace.maxOutputChars": {
+          "type": "number",
+          "default": 4000,
+          "minimum": 0,
+          "description": "truncated モードまたはエラー出力で Bazaar 出力チャンネルに出す最大文字数。"
+        },
+        "bazaar.trace.maxOutputLines": {
+          "type": "number",
+          "default": 80,
+          "minimum": 0,
+          "description": "truncated モードまたはエラー出力で Bazaar 出力チャンネルに出す最大行数。"
+        },
+        "bazaar.trace.omitLargeCommandOutput": {
+          "type": "boolean",
+          "default": true,
+          "description": "log、diff、annotate、cat、status など大量出力になりやすいコマンドの stdout 本文を要約だけにします。"
+        },
+        "bazaar.trace.maxEntries": {
+          "type": "number",
+          "default": 20,
+          "minimum": 0,
+          "description": "直近コマンド履歴としてメモリに保持する件数。"
+        },
+        "bazaar.trace.maxStoredOutputChars": {
+          "type": "number",
+          "default": 200000,
+          "minimum": 0,
+          "description": "直近コマンド履歴に保存する stdout/stderr の最大文字数。"
+        },
+        "bazaar.graph.limit": {
+          "type": "number",
+          "default": 200,
+          "minimum": 1,
+          "description": "グラフビューで一度に読み込む Bazaar リビジョンの最大数。"
+        },
+        "bazaar.unknown.maxExpandedFiles": {
+          "type": "number",
+          "default": 1000,
+          "minimum": 0,
+          "description": "未追跡ディレクトリをファイル項目へ展開する最大ファイル数。0 の場合はディレクトリ展開しません。"
         }
       }
     },
@@ -79,28 +142,34 @@
         {
           "id": "bazaarExplore",
           "name": "BAZAAR EXPLORE",
-          "type": "webview"
+          "type": "webview",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
         },
         {
           "id": "bazaarHistory",
-          "name": "Bazaar 履歴"
+          "name": "Bazaar 履歴",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
         },
         {
           "id": "bazaarBranches",
-          "name": "Bazaar ブランチ"
+          "name": "Bazaar ブランチ",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
         },
         {
           "id": "bazaarTags",
-          "name": "Bazaar タグ"
+          "name": "Bazaar タグ",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
         },
         {
           "id": "bazaarShelves",
-          "name": "Bazaar シェルブ"
+          "name": "Bazaar シェルブ",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
         },
         {
           "id": "bazaarGraph",
           "name": "Bazaar グラフ",
-          "type": "webview"
+          "type": "webview",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
         }
       ]
     },
@@ -236,6 +305,21 @@
       {
         "command": "bazaar.openOutput",
         "title": "Bazaar: 出力を開く"
+      },
+      {
+        "command": "bazaar.enableForWorkspace",
+        "title": "Bazaar: このワークスペースで有効化",
+        "icon": "$(check)"
+      },
+      {
+        "command": "bazaar.disableForWorkspace",
+        "title": "Bazaar: このワークスペースで無効化",
+        "icon": "$(circle-slash)"
+      },
+      {
+        "command": "bazaar.trace.openLast",
+        "title": "Bazaar: 直近コマンドの完全出力を開く",
+        "icon": "$(output)"
       },
       {
         "command": "bazaar.openResourceDiff",
@@ -423,6 +507,11 @@
         "icon": "$(git-merge)"
       },
       {
+        "command": "bazaar.graph.openEditor",
+        "title": "Bazaar: グラフをエディターで開く",
+        "icon": "$(open-preview)"
+      },
+      {
         "command": "bazaar.graph.refresh",
         "title": "Bazaar: グラフを更新",
         "icon": "$(refresh)"
@@ -433,321 +522,629 @@
         "command": "bazaar.blame.toggle",
         "key": "ctrl+alt+b",
         "mac": "cmd+alt+b",
-        "when": "editorTextFocus && resourceScheme == file"
+        "when": "editorTextFocus && resourceScheme == file && bazaar.repositoryReady && bazaar.featureEnabled"
       },
       {
         "command": "bazaar.blame.quickShowLineCommit",
         "key": "ctrl+alt+c",
         "mac": "cmd+alt+c",
-        "when": "editorTextFocus && resourceScheme == file"
+        "when": "editorTextFocus && resourceScheme == file && bazaar.repositoryReady && bazaar.featureEnabled"
       },
       {
         "command": "bazaar.blame.openLineChangesWithPreviousRevision",
         "key": "ctrl+alt+shift+b",
         "mac": "cmd+alt+shift+b",
-        "when": "editorTextFocus && resourceScheme == file"
+        "when": "editorTextFocus && resourceScheme == file && bazaar.repositoryReady && bazaar.featureEnabled"
       }
     ],
     "menus": {
       "scm/title": [
         {
           "command": "bazaar.refresh",
-          "group": "navigation"
+          "group": "navigation",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
         },
         {
           "command": "bazaar.blame.toggle",
-          "group": "navigation@1"
+          "group": "navigation@1",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
         },
         {
           "command": "bazaar.commit",
-          "group": "navigation"
+          "group": "navigation",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
         },
         {
           "command": "bazaar.pull",
-          "group": "2_sync"
+          "group": "2_sync",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
         },
         {
           "command": "bazaar.push",
-          "group": "2_sync"
+          "group": "2_sync",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
         },
         {
           "command": "bazaar.includeAll",
-          "group": "3_include"
+          "group": "3_include",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
         },
         {
           "command": "bazaar.resolveAuto",
-          "group": "4_conflict"
+          "group": "4_conflict",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
         },
         {
           "command": "bazaar.conflict.resolveAll",
-          "group": "4_conflict"
+          "group": "4_conflict",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
         },
         {
           "command": "bazaar.merge.forgetPending",
-          "group": "4_conflict"
+          "group": "4_conflict",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
         },
         {
           "command": "bazaar.cleanTree.preview",
-          "group": "5_danger"
+          "group": "5_danger",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
         },
         {
           "command": "bazaar.uncommit.preview",
-          "group": "5_danger"
+          "group": "5_danger",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
         },
         {
           "command": "bazaar.doctor",
-          "group": "8_diagnostics"
+          "group": "8_diagnostics",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
         },
         {
           "command": "bazaar.openOutput",
           "group": "9_output"
+        },
+        {
+          "command": "bazaar.disableForWorkspace",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled",
+          "group": "8_diagnostics@1"
         }
       ],
       "editor/title": [
         {
           "command": "bazaar.history.showFileHistory",
-          "group": "navigation"
+          "group": "navigation",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
         },
         {
           "command": "bazaar.blame.toggle",
-          "group": "navigation@0"
+          "group": "navigation@0",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
         },
         {
           "command": "bazaar.blame.showCommit",
-          "group": "navigation"
+          "group": "navigation",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
         },
         {
           "command": "bazaar.blame.showDiff",
-          "group": "navigation"
+          "group": "navigation",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
         },
         {
           "command": "bazaar.blame.openFileAtRevision",
-          "group": "navigation"
+          "group": "navigation",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
         }
       ],
       "editor/context": [
         {
           "command": "bazaar.blame.openLineChangesWithPreviousRevision",
-          "when": "resourceScheme == file",
+          "when": "resourceScheme == file && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "bazaar@1"
         },
         {
           "command": "bazaar.blame.openLineChangesWithWorkingFile",
-          "when": "resourceScheme == file",
+          "when": "resourceScheme == file && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "bazaar@2"
         },
         {
           "command": "bazaar.blame.openChangesWithPreviousRevision",
-          "when": "resourceScheme == file",
+          "when": "resourceScheme == file && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "bazaar@3"
         },
         {
           "command": "bazaar.blame.openChangesWithRevision",
-          "when": "resourceScheme == file",
+          "when": "resourceScheme == file && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "bazaar@4"
         },
         {
           "command": "bazaar.blame.openChangesWithBranchOrTag",
-          "when": "resourceScheme == file",
+          "when": "resourceScheme == file && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "bazaar@5"
         },
         {
           "command": "bazaar.blame.quickShowLineCommit",
-          "when": "resourceScheme == file",
+          "when": "resourceScheme == file && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "bazaar@6"
         },
         {
           "command": "bazaar.blame.inspectLineCommitDetails",
-          "when": "resourceScheme == file",
+          "when": "resourceScheme == file && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "bazaar@7"
         }
       ],
       "view/title": [
         {
           "command": "bazaar.explore.refresh",
-          "when": "view == bazaarExplore",
+          "when": "view == bazaarExplore && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "navigation"
         },
         {
           "command": "bazaar.history.refresh",
-          "when": "view == bazaarHistory",
+          "when": "view == bazaarHistory && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "navigation"
         },
         {
           "command": "bazaar.history.search",
-          "when": "view == bazaarHistory",
+          "when": "view == bazaarHistory && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "navigation"
         },
         {
           "command": "bazaar.history.clearFileFilter",
-          "when": "view == bazaarHistory",
+          "when": "view == bazaarHistory && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "navigation"
         },
         {
           "command": "bazaar.branch.refresh",
-          "when": "view == bazaarBranches",
+          "when": "view == bazaarBranches && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "navigation"
         },
         {
           "command": "bazaar.branch.create",
-          "when": "view == bazaarBranches",
+          "when": "view == bazaarBranches && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "navigation"
         },
         {
           "command": "bazaar.tag.refresh",
-          "when": "view == bazaarTags",
+          "when": "view == bazaarTags && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "navigation"
         },
         {
           "command": "bazaar.tag.create",
-          "when": "view == bazaarTags",
+          "when": "view == bazaarTags && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "navigation"
         },
         {
           "command": "bazaar.shelve.refresh",
-          "when": "view == bazaarShelves",
+          "when": "view == bazaarShelves && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "navigation"
         },
         {
           "command": "bazaar.shelve.createAll",
-          "when": "view == bazaarShelves",
+          "when": "view == bazaarShelves && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "navigation"
         },
         {
           "command": "bazaar.graph.refresh",
-          "when": "view == bazaarGraph",
+          "when": "view == bazaarGraph && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "navigation"
+        },
+        {
+          "command": "bazaar.graph.openEditor",
+          "when": "view == bazaarGraph && bazaar.repositoryReady && bazaar.featureEnabled",
+          "group": "navigation@1"
         }
       ],
       "view/item/context": [
         {
           "command": "bazaar.history.showCommitDiff",
-          "when": "view == bazaarHistory && viewItem == bazaarRevision",
+          "when": "view == bazaarHistory && viewItem == bazaarRevision && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "inline"
         },
         {
           "command": "bazaar.history.copyRevisionId",
-          "when": "view == bazaarHistory && viewItem == bazaarRevision",
+          "when": "view == bazaarHistory && viewItem == bazaarRevision && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "inline"
         },
         {
           "command": "bazaar.branch.switch",
-          "when": "view == bazaarBranches && viewItem == bazaarBranch",
+          "when": "view == bazaarBranches && viewItem == bazaarBranch && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "inline"
         },
         {
           "command": "bazaar.branch.switchForce",
-          "when": "view == bazaarBranches && viewItem == bazaarBranch",
+          "when": "view == bazaarBranches && viewItem == bazaarBranch && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "navigation"
         },
         {
           "command": "bazaar.branch.remove",
-          "when": "view == bazaarBranches && viewItem == bazaarBranch",
+          "when": "view == bazaarBranches && viewItem == bazaarBranch && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "navigation"
         },
         {
           "command": "bazaar.branch.removeForce",
-          "when": "view == bazaarBranches && viewItem == bazaarBranch",
+          "when": "view == bazaarBranches && viewItem == bazaarBranch && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "navigation"
         },
         {
           "command": "bazaar.tag.forceMove",
-          "when": "view == bazaarTags && viewItem == bazaarTag",
+          "when": "view == bazaarTags && viewItem == bazaarTag && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "inline"
         },
         {
           "command": "bazaar.tag.delete",
-          "when": "view == bazaarTags && viewItem == bazaarTag",
+          "when": "view == bazaarTags && viewItem == bazaarTag && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "navigation"
         },
         {
           "command": "bazaar.shelve.preview",
-          "when": "view == bazaarShelves && viewItem == bazaarShelf",
+          "when": "view == bazaarShelves && viewItem == bazaarShelf && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "inline"
         },
         {
           "command": "bazaar.shelve.apply",
-          "when": "view == bazaarShelves && viewItem == bazaarShelf",
+          "when": "view == bazaarShelves && viewItem == bazaarShelf && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "navigation"
         },
         {
           "command": "bazaar.shelve.keep",
-          "when": "view == bazaarShelves && viewItem == bazaarShelf",
+          "when": "view == bazaarShelves && viewItem == bazaarShelf && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "navigation"
         },
         {
           "command": "bazaar.shelve.delete",
-          "when": "view == bazaarShelves && viewItem == bazaarShelf",
+          "when": "view == bazaarShelves && viewItem == bazaarShelf && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "navigation"
         }
       ],
       "scm/resourceGroup/context": [
         {
           "command": "bazaar.includeAll",
-          "when": "scmProvider == bazaar && scmResourceGroup != included",
+          "when": "scmProvider == bazaar && scmResourceGroup != included && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "inline"
         }
       ],
       "scm/resourceState/context": [
         {
           "command": "bazaar.include",
-          "when": "scmProvider == bazaar && scmResourceGroup != included && scmResourceGroup != conflicts",
+          "when": "scmProvider == bazaar && scmResourceGroup != included && scmResourceGroup != conflicts && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "inline"
         },
         {
           "command": "bazaar.uninclude",
-          "when": "scmProvider == bazaar && scmResourceGroup == included",
+          "when": "scmProvider == bazaar && scmResourceGroup == included && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "inline"
         },
         {
           "command": "bazaar.resolve",
-          "when": "scmProvider == bazaar && scmResourceGroup == conflicts",
+          "when": "scmProvider == bazaar && scmResourceGroup == conflicts && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "inline"
         },
         {
           "command": "bazaar.conflict.openMerge",
-          "when": "scmProvider == bazaar && scmResourceGroup == conflicts",
+          "when": "scmProvider == bazaar && scmResourceGroup == conflicts && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "inline"
         },
         {
           "command": "bazaar.conflict.takeThis",
-          "when": "scmProvider == bazaar && scmResourceGroup == conflicts",
+          "when": "scmProvider == bazaar && scmResourceGroup == conflicts && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "navigation"
         },
         {
           "command": "bazaar.conflict.takeOther",
-          "when": "scmProvider == bazaar && scmResourceGroup == conflicts",
+          "when": "scmProvider == bazaar && scmResourceGroup == conflicts && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "navigation"
         },
         {
           "command": "bazaar.conflict.takeBothThisFirst",
-          "when": "scmProvider == bazaar && scmResourceGroup == conflicts",
+          "when": "scmProvider == bazaar && scmResourceGroup == conflicts && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "navigation"
         },
         {
           "command": "bazaar.conflict.takeBothThisLast",
-          "when": "scmProvider == bazaar && scmResourceGroup == conflicts",
+          "when": "scmProvider == bazaar && scmResourceGroup == conflicts && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "navigation"
         },
         {
           "command": "bazaar.revert",
-          "when": "scmProvider == bazaar && scmResourceGroup != conflicts && scmResourceGroup != untracked && scmResourceState != pendingMerge",
+          "when": "scmProvider == bazaar && scmResourceGroup != conflicts && scmResourceGroup != untracked && scmResourceState != pendingMerge && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "navigation"
         },
         {
           "command": "bazaar.merge.forgetPending",
-          "when": "scmProvider == bazaar && scmResourceState == pendingMerge",
+          "when": "scmProvider == bazaar && scmResourceState == pendingMerge && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "navigation"
         },
         {
           "command": "bazaar.shelve.create",
-          "when": "scmProvider == bazaar && scmResourceGroup != conflicts && scmResourceGroup != untracked && scmResourceState != pendingMerge",
+          "when": "scmProvider == bazaar && scmResourceGroup != conflicts && scmResourceGroup != untracked && scmResourceState != pendingMerge && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "navigation"
         },
         {
           "command": "bazaar.openResourceDiff",
-          "when": "scmProvider == bazaar && scmResourceState != pendingMerge",
+          "when": "scmProvider == bazaar && scmResourceState != pendingMerge && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "bazaar.refresh",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.explore.open",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.explore.refresh",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.include",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.uninclude",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.includeAll",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.revert",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.revertAll",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.merge.forgetPending",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.commit",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.pull",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.push",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.resolve",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.resolveAuto",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.conflict.openMerge",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.conflict.takeThis",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.conflict.takeOther",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.conflict.takeBothThisFirst",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.conflict.takeBothThisLast",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.conflict.resolveAll",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.cleanTree.preview",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.cleanTree.run",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.uncommit.preview",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.uncommit.run",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.lock.break",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.doctor",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.openOutput"
+        },
+        {
+          "command": "bazaar.enableForWorkspace",
+          "when": "!bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.disableForWorkspace",
+          "when": "bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.trace.openLast",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.openResourceDiff",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.history.refresh",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.history.search",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.history.clearFileFilter",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.history.showFileHistory",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.history.showCommit",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.history.showCommitDiff",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.history.copyRevisionId",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.history.openFileAtRevision",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.blame.toggle",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.blame.showCommit",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.blame.showDiff",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.blame.openFileAtRevision",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.blame.openLineChangesWithPreviousRevision",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.blame.openLineChangesWithWorkingFile",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.blame.openChangesWithPreviousRevision",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.blame.openChangesWithRevision",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.blame.openChangesWithBranchOrTag",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.blame.quickShowLineCommit",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.blame.inspectLineCommitDetails",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.branch.refresh",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.branch.create",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.branch.switch",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.branch.switchForce",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.branch.remove",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.branch.removeForce",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.tag.refresh",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.tag.create",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.tag.delete",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.tag.forceMove",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.shelve.refresh",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.shelve.create",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.shelve.createAll",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.shelve.preview",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.shelve.apply",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.shelve.keep",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.shelve.delete",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.graph.open",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.graph.openEditor",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.graph.refresh",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
         }
       ]
     }

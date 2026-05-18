@@ -9,13 +9,13 @@ import {
   type HistoryCommitDiffPlan,
   createHistoryCommitDiffPlan
 } from './historyDiff';
-import { loadBazaarRevisionsWithFallback } from './historyFallback';
 import { resolveFileHistoryTarget } from './historyFile';
 import {
   resolveRevisionCommandTarget,
   revisionDisplayLabel,
   revisionSpecForDocument
 } from './historyTarget';
+import { BazaarRevisionCache } from './revisionCache';
 
 type HistoryNode =
   | { type: 'revision'; revision: BazaarRevision }
@@ -29,10 +29,13 @@ export class BazaarHistoryView implements vscode.TreeDataProvider<HistoryNode>, 
   private visibleRevisions: BazaarRevision[] = [];
   private query = '';
   private pathFilter: string | undefined;
+  private loaded = false;
+  private loading = false;
 
   constructor(
     private readonly rootPath: string,
     private readonly client: BazaarClient,
+    private readonly revisionCache: BazaarRevisionCache,
     private readonly revisionProvider: BazaarRevisionDocumentProvider,
     private readonly generatedProvider: BazaarGeneratedDocumentProvider,
     private readonly output: vscode.OutputChannel
@@ -66,6 +69,10 @@ export class BazaarHistoryView implements vscode.TreeDataProvider<HistoryNode>, 
 
   getChildren(node?: HistoryNode): HistoryNode[] {
     if (!node) {
+      if (!this.loaded) {
+        void this.ensureLoaded();
+        return [{ type: 'detail', label: this.loading ? 'Bazaar 履歴を読み込み中...' : 'Bazaar 履歴はまだ読み込まれていません。', icon: 'loading' }];
+      }
       return this.visibleRevisions.map((revision) => ({ type: 'revision', revision }));
     }
 
@@ -133,20 +140,46 @@ export class BazaarHistoryView implements vscode.TreeDataProvider<HistoryNode>, 
 
   async refresh(pathFilter?: string): Promise<void> {
     this.pathFilter = pathFilter;
-    const config = vscode.workspace.getConfiguration('bazaar');
-    const limit = config.get<number>('history.limit', 200);
-    const includeMerged = config.get<boolean>('history.includeMerged', true);
-    this.revisions = await loadBazaarRevisionsWithFallback(
-      this.rootPath,
-      this.client,
-      { limit, includeMerged, path: pathFilter },
-      this.output
-    );
-    this.visibleRevisions = this.query ? searchRevisions(this.revisions, this.query) : this.revisions;
+    this.revisionCache.invalidate();
+    await this.load(pathFilter);
+  }
+
+  async ensureLoaded(): Promise<void> {
+    if (this.loaded || this.loading) {
+      return;
+    }
+    await this.load(this.pathFilter);
+  }
+
+  invalidate(): void {
+    this.loaded = false;
+    this.revisions = [];
+    this.visibleRevisions = [];
+    this.revisionCache.invalidate();
     this.onDidChangeTreeDataEmitter.fire(undefined);
   }
 
+  private async load(pathFilter?: string): Promise<void> {
+    this.loading = true;
+    this.onDidChangeTreeDataEmitter.fire(undefined);
+    const config = vscode.workspace.getConfiguration('bazaar');
+    const limit = config.get<number>('history.limit', 200);
+    const includeMerged = config.get<boolean>('history.includeMerged', true);
+    try {
+      this.revisions = await this.revisionCache.get({ limit, includeMerged, path: pathFilter });
+      this.visibleRevisions = this.query ? searchRevisions(this.revisions, this.query) : this.revisions;
+      this.loaded = true;
+    } catch (error) {
+      this.output.appendLine(`Bazaar 履歴を読み込めませんでした: ${formatError(error)}`);
+      throw error;
+    } finally {
+      this.loading = false;
+      this.onDidChangeTreeDataEmitter.fire(undefined);
+    }
+  }
+
   async search(): Promise<void> {
+    await this.ensureLoaded();
     const query = await vscode.window.showInputBox({
       title: 'Bazaar 履歴を検索',
       value: this.query,
@@ -160,17 +193,12 @@ export class BazaarHistoryView implements vscode.TreeDataProvider<HistoryNode>, 
     this.visibleRevisions = this.query ? searchRevisions(this.revisions, this.query) : this.revisions;
     if (this.query && this.visibleRevisions.length === 0) {
       const config = vscode.workspace.getConfiguration('bazaar');
-      this.revisions = await loadBazaarRevisionsWithFallback(
-        this.rootPath,
-        this.client,
-        {
-          limit: config.get<number>('history.limit', 200),
-          includeMerged: config.get<boolean>('history.includeMerged', true),
-          path: this.pathFilter,
-          match: this.query
-        },
-        this.output
-      );
+      this.revisions = await this.revisionCache.get({
+        limit: config.get<number>('history.limit', 200),
+        includeMerged: config.get<boolean>('history.includeMerged', true),
+        path: this.pathFilter,
+        match: this.query
+      });
       this.visibleRevisions = this.revisions;
     }
     this.onDidChangeTreeDataEmitter.fire(undefined);
@@ -307,4 +335,8 @@ function firstLine(message: string): string {
 
 function showNoValidRevisionWarning(): void {
   vscode.window.showWarningMessage('有効な Bazaar リビジョンが選択されていません。');
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

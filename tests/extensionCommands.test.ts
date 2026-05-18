@@ -9,6 +9,7 @@ interface PackageJson {
   contributes?: {
     commands?: Array<{ command: string; icon?: string }>;
     keybindings?: Array<{ command: string; key?: string; mac?: string; when?: string }>;
+    views?: Record<string, Array<{ id: string; when?: string }>>;
     menus?: Record<string, Array<{ command: string; group?: string; when?: string }>>;
   };
 }
@@ -133,6 +134,41 @@ describe('extension command registration', () => {
       .map((event) => event.slice('onCommand:'.length))
       .filter((command) => !contributed.has(command));
     expect(missing).toEqual([]);
+  });
+
+  it('guards Bazaar-only views, menus, keybindings, and command palette entries with context keys', () => {
+    const parsed = packageJson();
+    const guard = 'bazaar.repositoryReady && bazaar.featureEnabled';
+
+    for (const view of parsed.contributes?.views?.scm ?? []) {
+      expect(view.when).toBe(guard);
+    }
+    for (const binding of parsed.contributes?.keybindings ?? []) {
+      expect(binding.when).toContain(guard);
+    }
+    for (const [menuName, entries] of Object.entries(parsed.contributes?.menus ?? {})) {
+      if (menuName === 'commandPalette') {
+        continue;
+      }
+      for (const entry of entries) {
+        if (entry.command === 'bazaar.openOutput') {
+          continue;
+        }
+        expect(entry.when).toContain(guard);
+      }
+    }
+
+    const commandPalette = parsed.contributes?.menus?.commandPalette ?? [];
+    expect(commandPalette).toContainEqual({ command: 'bazaar.openOutput' });
+    expect(commandPalette).toContainEqual({ command: 'bazaar.enableForWorkspace', when: '!bazaar.featureEnabled' });
+    expect(commandPalette).toContainEqual({ command: 'bazaar.disableForWorkspace', when: 'bazaar.featureEnabled' });
+    for (const entry of commandPalette.filter((item) => ![
+      'bazaar.openOutput',
+      'bazaar.enableForWorkspace',
+      'bazaar.disableForWorkspace'
+    ].includes(item.command))) {
+      expect(entry.when).toBe(guard);
+    }
   });
 
   it('keeps the default keybindings scoped to the blame commands', () => {

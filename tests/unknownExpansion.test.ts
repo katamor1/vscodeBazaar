@@ -37,4 +37,17 @@ describe('expandUnknownDirectories', () => {
       { path: 'tracked.ts', kind: 'modified' }
     ]);
   });
+
+  it('leaves unknown directories collapsed when the expansion limit is zero', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vscode-bazaar-unknown-'));
+    tempRoots.push(root);
+    await fs.mkdir(path.join(root, 'generated'), { recursive: true });
+    await fs.writeFile(path.join(root, 'generated', 'a.txt'), 'a');
+
+    await expect(expandUnknownDirectories(root, [
+      { path: 'generated/', kind: 'unknown' }
+    ], { maxExpandedFiles: 0 })).resolves.toEqual([
+      { path: 'generated/', kind: 'unknown' }
+    ]);
+  });
 });

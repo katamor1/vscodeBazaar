@@ -11,6 +11,8 @@ export class BazaarShelveView implements vscode.TreeDataProvider<ShelfNode>, vsc
   private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<ShelfNode | undefined>();
   readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
   private shelves: BazaarShelf[] = [];
+  private loaded = false;
+  private loading = false;
 
   constructor(
     private readonly rootPath: string,
@@ -35,12 +37,28 @@ export class BazaarShelveView implements vscode.TreeDataProvider<ShelfNode>, vsc
   }
 
   getChildren(): ShelfNode[] {
+    if (!this.loaded) {
+      void this.ensureLoaded();
+    }
     return this.shelves.map((shelf) => ({ type: 'shelf', shelf }));
   }
 
   async refresh(): Promise<void> {
-    this.shelves = await this.client.shelves();
-    this.onDidChangeTreeDataEmitter.fire(undefined);
+    this.loading = true;
+    try {
+      this.shelves = await this.client.shelves();
+      this.loaded = true;
+      this.onDidChangeTreeDataEmitter.fire(undefined);
+    } finally {
+      this.loading = false;
+    }
+  }
+
+  async ensureLoaded(): Promise<void> {
+    if (this.loaded || this.loading) {
+      return;
+    }
+    await this.refresh();
   }
 
   async create(resource?: { resourceUri?: vscode.Uri }): Promise<void> {

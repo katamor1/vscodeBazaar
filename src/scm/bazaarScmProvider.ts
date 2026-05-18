@@ -1,6 +1,7 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { BazaarClient, BazaarCommandError, isPullDivergedError } from '../bazaar/client';
+import { formatCommandErrorOutput } from '../bazaar/commandTrace';
 import { resolveTextConflictMarkers, type TextConflictResolution } from '../bazaar/conflictMarkers';
 import { IncludedSet } from '../bazaar/staging';
 import type { BazaarChange, BazaarCleanTreeKind, BazaarConflict, BazaarChangeKind, BazaarConflictAction } from '../bazaar/types';
@@ -136,7 +137,6 @@ export class BazaarScmProvider implements vscode.Disposable {
       vscode.commands.registerCommand('bazaar.uncommit.run', () => this.runUncommit()),
       vscode.commands.registerCommand('bazaar.lock.break', () => this.breakLock()),
       vscode.commands.registerCommand('bazaar.doctor', () => this.doctor()),
-      vscode.commands.registerCommand('bazaar.openOutput', () => this.output.show()),
       vscode.commands.registerCommand('bazaar.openResourceDiff', (resource?: BazaarResourceState) => this.openResourceDiff(resource))
     );
   }
@@ -148,7 +148,8 @@ export class BazaarScmProvider implements vscode.Disposable {
         this.client.conflicts()
       ]);
       const expandUnknowns = vscode.workspace.getConfiguration('bazaar').get<boolean>('unknown.expandDirectories', true);
-      this.currentChanges = expandUnknowns ? await expandUnknownDirectories(this.rootPath, changes) : changes;
+      const maxExpandedFiles = vscode.workspace.getConfiguration('bazaar').get<number>('unknown.maxExpandedFiles', 1000);
+      this.currentChanges = expandUnknowns ? await expandUnknownDirectories(this.rootPath, changes, { maxExpandedFiles }) : changes;
       this.currentConflicts = conflicts;
       this.includedSet.prune(this.currentChanges);
       this.updateGroups();
@@ -558,9 +559,14 @@ export class BazaarScmProvider implements vscode.Disposable {
 
   private async showTextDiffFallback(relativePath: string, cause: unknown): Promise<void> {
     this.output.appendLine(`${relativePath} を VS Code 差分エディターで開けませんでした: ${formatError(cause)}`);
+    this.output.appendLine('Bazaar diff は一時ドキュメントとして開きます。');
     const diff = await this.client.diff(relativePath);
-    this.output.appendLine(diff);
-    this.output.show();
+    const document = await this.generatedProvider.openDocument(
+      `Bazaar diff ${relativePath}`,
+      diff.trimEnd() || '(差分なし)',
+      'diff'
+    );
+    await vscode.window.showTextDocument(document, { preview: true });
   }
 
   private updateGroups(): void {
@@ -665,11 +671,12 @@ export class BazaarScmProvider implements vscode.Disposable {
 
   private appendCommandError(error: BazaarCommandError): void {
     this.output.appendLine(`コマンド失敗: bzr ${error.args.join(' ')}`);
-    if (error.result.stdout) {
-      this.output.appendLine(error.result.stdout.trimEnd());
-    }
-    if (error.result.stderr) {
-      this.output.appendLine(error.result.stderr.trimEnd());
+    const config = vscode.workspace.getConfiguration('bazaar');
+    for (const line of formatCommandErrorOutput(error.result, {
+      maxOutputChars: config.get<number>('trace.maxOutputChars', 4000),
+      maxOutputLines: config.get<number>('trace.maxOutputLines', 80)
+    })) {
+      this.output.appendLine(line);
     }
   }
 }

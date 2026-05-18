@@ -10,6 +10,7 @@ Bazaar の作業ツリーを VS Code のソース管理ビューから扱うた�
 - 作業ツリー差分、履歴差分、blame のコンテキスト操作を VS Code の差分エディターで開きます。
 - ソース管理ビュー配下に `BAZAAR EXPLORE`、履歴、ブランチ、タグ、シェルブ、グラフの各ビューを追加します。
 - `BAZAAR EXPLORE` は、状態、競合、直近履歴グラフ、ブランチ、シェルブ、タグ、Bazaar info を 1 つの GUI で視覚確認できます。
+- 大きな Bazaar ツリーでも起動時は SCM 状態を先に読み込み、履歴、ブランチ、タグ、シェルブ、グラフはビュー表示時や明示更新時に読み込みます。
 - ファイル履歴、履歴検索、コミット詳細、変更パス、リビジョン ID のコピー、指定リビジョンのファイル表示に対応します。
 - カーソル行または選択範囲の blame 注釈を表示し、ホバーで詳細を確認できます。
 - GitLens 風の blame コンテキスト操作として、前リビジョン、作業中ファイル、任意リビジョン、ブランチ、タグとの差分を開けます。
@@ -37,6 +38,9 @@ Bazaar CLI をインストールし、`bzr` として実行できるようにし
 - `Bazaar: Push`
 - `Bazaar: Pending Merge 状態をクリア`
 - `Bazaar: 出力を開く`
+- `Bazaar: このワークスペースで無効化`
+- `Bazaar: このワークスペースで有効化`
+- `Bazaar: 直近コマンドの完全出力を開く`
 - `Bazaar: ファイル履歴を表示`
 - `Bazaar: Blame 表示を切り替え`
 - `Bazaar: 現在行のコミットをクイック表示`
@@ -64,17 +68,27 @@ Bazaar CLI をインストールし、`bzr` として実行できるようにし
 ## 設定
 
 - `bazaar.cliPath`: Bazaar コマンドライン実行ファイルのパス。
+- `bazaar.enabled`: このワークスペースで Bazaar 拡張機能を有効にするか。無効時は専用ビューと操作を隠します。
+- `bazaar.command.timeoutMs`: Bazaar コマンドのタイムアウト時間。
 - `bazaar.history.limit`: 履歴ビュー、グラフビュー、`BAZAAR EXPLORE` で読み込む最大リビジョン数。
 - `bazaar.history.includeMerged`: 履歴ビュー、グラフビュー、`BAZAAR EXPLORE` にマージ済みリビジョンを含めるか。
 - `bazaar.unknown.expandDirectories`: 未追跡ディレクトリをソース管理ビューでファイル単位に展開するか。
+- `bazaar.unknown.maxExpandedFiles`: 未追跡ディレクトリ展開で表示する最大ファイル数。
 - `bazaar.autoRefresh.enabled`: ワークスペース内のファイル変更後に Bazaar 状態を自動更新するか。
 - `bazaar.autoRefresh.debounceMs`: 自動更新のデバウンス時間。
+- `bazaar.graph.limit`: グラフビューで一度に読み込む最大リビジョン数。
+- `bazaar.trace.mode`: Bazaar コマンドトレースを `off`、`summary`、`truncated`、`full` のどれで出力するか。
+- `bazaar.trace.maxOutputChars` / `bazaar.trace.maxOutputLines`: `truncated` モードやエラー出力で出す最大サイズ。
+- `bazaar.trace.omitLargeCommandOutput`: `log`、`diff`、`annotate`、`cat`、`status` などの巨大出力本文を要約にするか。
+- `bazaar.trace.maxEntries` / `bazaar.trace.maxStoredOutputChars`: 直近コマンド完全出力としてメモリ保持する件数と最大文字数。
 - `bazaar.blame.enabledFormat`: カーソル行または選択範囲の行末 blame 装飾形式。
 - `bazaar.dangerousOperations.requireTypedConfirmation`: 破壊的操作の前に、確認フレーズの正確な入力を要求するか。
 
 ## 安全性と劣化動作
 
 - Bazaar コマンドを実行する前にリビジョン入力を検証します。不正な履歴、グラフ、blame 操作は、無効なリビジョンを `bzr` に渡さず、短い警告で止めます。
+- `.bzr` がないフォルダー、拡張機能を無効化したワークスペース、Bazaar 作業ツリーを検出できない状態では、専用ビューや操作メニューを非表示にします。
+- Bazaar コマンドの通常トレースは既定で要約のみを出力し、巨大な stdout/stderr 本文は Output Channel に直接流しません。必要な場合は `Bazaar: 直近コマンドの完全出力を開く` か `bazaar.trace.mode` を使います。
 - 履歴上のファイル内容は読み取り専用の仮想ドキュメントとして開きます。
 - `clean-tree`、`uncommit`、`break-lock`、全変更の revert、全競合の解決、シェルブ削除などの危険な操作は確認ダイアログを使い、設定が有効なら確認フレーズの入力も要求します。
 - Bazaar ツリーがない場合や Bazaar メタデータが壊れている場合は、修復を試みず、利用不可メッセージ、無効化された操作、出力チャンネルの診断へ安全に劣化します。
@@ -124,7 +138,7 @@ npm audit --omit=dev
 npm run package
 ```
 
-`npm run package` は `prepackage` により `npm run compile`、`npm test`、`npm run test:integration`、`npm audit --omit=dev` を先に実行します。このローカル VSIX リリースラインでは、`npm run package` により `vscode-bazaar-0.2.9.vsix` が生成されます。
+`npm run package` は `prepackage` により `npm run compile`、`npm test`、`npm run test:integration`、`npm audit --omit=dev` を先に実行します。このローカル VSIX リリースラインでは、`npm run package` により `vscode-bazaar-0.2.10.vsix` が生成されます。
 
 ## 補足
 

@@ -2,9 +2,19 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import type { BazaarChange } from './types';
 
-export async function expandUnknownDirectories(rootPath: string, changes: readonly BazaarChange[]): Promise<BazaarChange[]> {
+export interface UnknownExpansionOptions {
+  maxExpandedFiles?: number;
+}
+
+export async function expandUnknownDirectories(
+  rootPath: string,
+  changes: readonly BazaarChange[],
+  options: UnknownExpansionOptions = {}
+): Promise<BazaarChange[]> {
   const ignorePatterns = await readIgnorePatterns(rootPath);
   const expanded: BazaarChange[] = [];
+  const maxExpandedFiles = options.maxExpandedFiles ?? Number.POSITIVE_INFINITY;
+  const budget = { remaining: maxExpandedFiles };
 
   for (const change of changes) {
     if (change.kind !== 'unknown' || !looksLikeDirectory(change.path)) {
@@ -18,7 +28,7 @@ export async function expandUnknownDirectories(rootPath: string, changes: readon
       continue;
     }
 
-    const files = await walkUnknownDirectory(rootPath, directoryPath, ignorePatterns);
+    const files = await walkUnknownDirectory(rootPath, directoryPath, ignorePatterns, budget);
     if (files.length === 0) {
       expanded.push(change);
       continue;
@@ -30,11 +40,22 @@ export async function expandUnknownDirectories(rootPath: string, changes: readon
   return expanded;
 }
 
-async function walkUnknownDirectory(rootPath: string, directoryPath: string, ignorePatterns: readonly string[]): Promise<string[]> {
+async function walkUnknownDirectory(
+  rootPath: string,
+  directoryPath: string,
+  ignorePatterns: readonly string[],
+  budget: { remaining: number }
+): Promise<string[]> {
+  if (budget.remaining <= 0) {
+    return [];
+  }
   const entries = await fs.readdir(directoryPath, { withFileTypes: true });
   const files: string[] = [];
 
   for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    if (budget.remaining <= 0) {
+      break;
+    }
     if (entry.name === '.bzr') {
       continue;
     }
@@ -46,9 +67,10 @@ async function walkUnknownDirectory(rootPath: string, directoryPath: string, ign
     }
 
     if (entry.isDirectory()) {
-      files.push(...await walkUnknownDirectory(rootPath, absolutePath, ignorePatterns));
+      files.push(...await walkUnknownDirectory(rootPath, absolutePath, ignorePatterns, budget));
     } else if (entry.isFile()) {
       files.push(relativePath);
+      budget.remaining -= 1;
     }
   }
 
