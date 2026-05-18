@@ -59,11 +59,14 @@ const bazaarTests = {
       'bazaar.refresh',
       'bazaar.history.refresh',
       'bazaar.history.showFileHistory',
+      'bazaar.history.openEditor',
       'bazaar.branch.refresh',
       'bazaar.tag.refresh',
       'bazaar.shelve.refresh',
       'bazaar.graph.refresh',
+      'bazaar.graph.openEditor',
       'bazaar.explore.refresh',
+      'bazaar.explore.openEditor',
       'bazaar.includeAll',
       'bazaar.openResourceDiff'
     ]) {

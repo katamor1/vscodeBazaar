@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createBazaarExploreModel,
   createEmptyBazaarExploreSnapshot,
+  extendBazaarExploreHistory,
   type BazaarExploreSnapshot
 } from '../src/views/exploreSnapshot';
 
@@ -92,5 +93,41 @@ describe('createBazaarExploreModel', () => {
 
     expect(model.health).toBe('partial');
     expect(model.headline).toBe('一部未読込');
+  });
+
+  it('extends only history and graph during EXPLORE load-more', () => {
+    const snapshot: BazaarExploreSnapshot = {
+      ...createEmptyBazaarExploreSnapshot('C:/work/tree'),
+      loadedAt: '2026-05-16T09:00:00.000Z',
+      changes: [{ kind: 'modified', path: 'src/app.ts' }],
+      branches: [{ name: 'trunk', path: 'C:/work/tree', current: true }],
+      revisions: [{
+        revno: '1',
+        revisionId: 'rev-1',
+        parentIds: [],
+        tags: [],
+        committer: 'Alice',
+        branchNick: 'trunk',
+        timestamp: 'Fri 2026-05-15 00:01:00 +0900',
+        message: 'initial',
+        depth: 0
+      }]
+    };
+    const extended = extendBazaarExploreHistory(snapshot, [{
+      revno: '2',
+      revisionId: 'rev-2',
+      parentIds: ['rev-1'],
+      tags: [],
+      committer: 'Alice',
+      branchNick: 'trunk',
+      timestamp: 'Fri 2026-05-15 00:02:00 +0900',
+      message: 'second',
+      depth: 0
+    }, ...snapshot.revisions]);
+
+    expect(extended.changes).toBe(snapshot.changes);
+    expect(extended.branches).toBe(snapshot.branches);
+    expect(extended.revisions.map((revision) => revision.revno)).toEqual(['2', '1']);
+    expect(extended.graph.nodes.map((node) => node.id)).toEqual(['rev-2', 'rev-1']);
   });
 });

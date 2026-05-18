@@ -1,30 +1,11 @@
 import * as vscode from 'vscode';
 import { buildGraph } from '../bazaar/graphModel';
-import { revisionGraphId } from '../bazaar/revisionSpec';
 import type { BazaarRevision, RevisionGraph } from '../bazaar/types';
+import { createGraphPayload } from './graphPayload';
 import { resolveGraphRevisionMessage, type GraphMessage } from './graphMessage';
 import { BazaarRevisionCache } from './revisionCache';
 
 type GraphHost = vscode.WebviewView | vscode.WebviewPanel;
-
-interface GraphPayloadRevision {
-  graphId: string;
-  revno: string;
-  committer: string;
-  timestamp: string;
-  branchNick: string;
-  tags: string[];
-  parents: string[];
-  message: string;
-  changedPaths: string[];
-}
-
-interface GraphPayload {
-  graph: RevisionGraph;
-  revisions: GraphPayloadRevision[];
-  limit: number;
-  canLoadMore: boolean;
-}
 
 export class BazaarGraphView implements vscode.WebviewViewProvider, vscode.Disposable {
   private view: vscode.WebviewView | undefined;
@@ -142,41 +123,18 @@ export class BazaarGraphView implements vscode.WebviewViewProvider, vscode.Dispo
   }
 }
 
-function createGraphPayload(graph: RevisionGraph, revisions: BazaarRevision[], limit: number): GraphPayload {
-  return {
-    graph,
-    revisions: revisions.flatMap((revision) => {
-      const graphId = revisionGraphId(revision);
-      return graphId
-        ? [{
-            graphId,
-            revno: revision.revno,
-            committer: revision.committer,
-            timestamp: revision.timestamp,
-            branchNick: revision.branchNick,
-            tags: revision.tags,
-            parents: revision.parentIds,
-            message: revision.message,
-            changedPaths: revision.changedPaths ?? []
-          }]
-        : [];
-    }),
-    limit,
-    canLoadMore: revisions.length >= limit
-  };
-}
-
 function renderGraphShellHtml(): string {
   return `<!doctype html>
 <html>
 <head>
   <meta charset="UTF-8">
   <style>
+    html, body { height: 100%; }
     body { padding: 0; margin: 0; color: var(--vscode-foreground); font-family: var(--vscode-font-family); }
     .toolbar { display: flex; gap: 6px; padding: 8px; border-bottom: 1px solid var(--vscode-panel-border); }
     button { color: var(--vscode-button-foreground); background: var(--vscode-button-background); border: 0; padding: 4px 8px; }
     button.secondary { color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
-    .layout { display: grid; grid-template-columns: minmax(420px, 1fr) 300px; min-height: 0; }
+    .layout { display: grid; grid-template-columns: minmax(420px, 1fr) 300px; height: calc(100vh - 43px); min-height: 0; }
     .graph-wrap { overflow: auto; }
     .detail { border-left: 1px solid var(--vscode-panel-border); padding: 10px; overflow: auto; }
     .detail h2 { margin: 0 0 6px; font-size: 13px; font-weight: 600; }
@@ -208,10 +166,13 @@ function renderGraphShellHtml(): string {
     let revisions = [];
     let byId = new Map();
     let selected;
+    let canLoadMore = false;
+    let loadingMore = false;
 
     document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ command: 'refresh' }));
-    document.getElementById('load-more').addEventListener('click', () => vscode.postMessage({ command: 'loadMore' }));
+    document.getElementById('load-more').addEventListener('click', () => requestLoadMore());
     document.getElementById('diff').addEventListener('click', () => selected && vscode.postMessage({ command: 'showDiff', revisionId: selected }));
+    document.getElementById('graph').addEventListener('scroll', () => maybeAutoLoadMore(document.getElementById('graph')));
 
     window.addEventListener('message', (event) => {
       if (event.data?.command !== 'setGraph') {
@@ -222,9 +183,11 @@ function renderGraphShellHtml(): string {
 
     function renderGraph(payload) {
       revisions = payload.revisions || [];
+      canLoadMore = Boolean(payload.canLoadMore);
+      loadingMore = false;
       byId = new Map(revisions.map((revision) => [revision.graphId, revision]));
       const graph = payload.graph || { nodes: [], edges: [] };
-      document.getElementById('load-more').style.display = payload.canLoadMore ? '' : 'none';
+      document.getElementById('load-more').style.display = canLoadMore ? '' : 'none';
 
       if (!graph.nodes.length) {
         document.getElementById('graph').textContent = '履歴グラフを表示するリビジョンがありません。';
@@ -257,7 +220,7 @@ function renderGraphShellHtml(): string {
         const x = 24 + node.x * columnWidth;
         const y = 24 + node.y * rowHeight;
         const revision = byId.get(node.id);
-        const meta = revision ? [revision.committer, revision.branchNick, revision.tags.map((tag) => '#' + tag).join(' ')].filter(Boolean).join(' / ') : '';
+        const meta = revision ? [revision.displayTimestamp, revision.committer, revision.branchNick, revision.tags.map((tag) => '#' + tag).join(' ')].filter(Boolean).join(' / ') : '';
         return '<g class="node" data-id="' + escapeHtml(node.id) + '">' +
           '<circle cx="' + x + '" cy="' + y + '" r="' + radius + '" />' +
           '<text class="label" x="' + labelLaneX + '" y="' + (y - 5) + '">' + escapeHtml(node.label) + '</text>' +
@@ -289,7 +252,7 @@ function renderGraphShellHtml(): string {
         : '<div class="meta">読み込んだログデータに変更パスはありません。</div>';
       document.getElementById('detail').innerHTML =
         '<h2>' + escapeHtml(revision.revno + ' ' + firstLine(revision.message)) + '</h2>' +
-        '<div class="meta">' + escapeHtml(revision.committer) + '<br>' + escapeHtml(revision.timestamp) + '<br>' + escapeHtml(revision.branchNick || '') + ' ' + tags + '</div>' +
+        '<div class="meta">' + escapeHtml(revision.committer) + '<br>' + escapeHtml(revision.displayTimestamp || revision.timestamp) + '<br>' + escapeHtml(revision.branchNick || '') + ' ' + tags + '</div>' +
         '<div class="meta">親<br>' + parents + '</div>' +
         '<div class="files">' + files + '</div>';
       document.querySelectorAll('.file').forEach((fileButton) => {
@@ -301,6 +264,23 @@ function renderGraphShellHtml(): string {
 
     function firstLine(value) {
       return (value || '').split(/\\r?\\n/)[0] || '(メッセージなし)';
+    }
+
+    function maybeAutoLoadMore(element) {
+      if (!element || !canLoadMore || loadingMore || element.scrollHeight <= 0) {
+        return;
+      }
+      if ((element.scrollTop + element.clientHeight) / element.scrollHeight >= 0.95) {
+        requestLoadMore();
+      }
+    }
+
+    function requestLoadMore() {
+      if (!canLoadMore || loadingMore) {
+        return;
+      }
+      loadingMore = true;
+      vscode.postMessage({ command: 'loadMore' });
     }
 
     function escapeHtml(value) {

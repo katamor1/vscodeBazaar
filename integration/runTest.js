@@ -5,22 +5,13 @@ const { spawnSync } = require('node:child_process');
 const { runTests } = require('@vscode/test-electron');
 
 async function main() {
-  const extensionDevelopmentPath = path.resolve(__dirname, '..');
-  const extensionTestsPath = path.resolve(__dirname, 'suite');
-  const vscodeExecutablePath = findLocalVSCodeExecutable();
-  const noBazaarWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), 'vscode-bazaar-no-bazaar-workspace-'));
-
-  try {
-    await runIntegrationSession({
-      extensionDevelopmentPath,
-      extensionTestsPath,
-      vscodeExecutablePath,
-      workspacePath: noBazaarWorkspace,
-      env: { BAZAAR_INTEGRATION_MODE: 'no-bazaar' }
-    });
-  } finally {
-    removeTemporaryDirectory(noBazaarWorkspace);
+  const singleMode = parseSingleMode(process.argv);
+  if (singleMode) {
+    await runSingleIntegrationMode(singleMode);
+    return;
   }
+
+  runChildIntegrationMode('no-bazaar');
 
   const bzrPath = findBazaarExecutable();
   if (!bzrPath) {
@@ -28,7 +19,40 @@ async function main() {
     return;
   }
 
-  await delay(2000);
+  runChildIntegrationMode('bazaar');
+}
+
+async function runSingleIntegrationMode(mode) {
+  const extensionDevelopmentPath = path.resolve(__dirname, '..');
+  const extensionTestsPath = path.resolve(__dirname, 'suite');
+  const vscodeExecutablePath = findLocalVSCodeExecutable();
+
+  if (mode === 'no-bazaar') {
+    const noBazaarWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), 'vscode-bazaar-no-bazaar-workspace-'));
+
+    try {
+      await runIntegrationSession({
+        extensionDevelopmentPath,
+        extensionTestsPath,
+        vscodeExecutablePath,
+        workspacePath: noBazaarWorkspace,
+        env: { BAZAAR_INTEGRATION_MODE: 'no-bazaar' }
+      });
+    } finally {
+      removeTemporaryDirectory(noBazaarWorkspace);
+    }
+    return;
+  }
+
+  if (mode !== 'bazaar') {
+    throw new Error(`Unknown integration mode: ${mode}`);
+  }
+
+  const bzrPath = findBazaarExecutable();
+  if (!bzrPath) {
+    console.log('Skipping Bazaar-backed integration tests because bzr was not found on PATH.');
+    return;
+  }
 
   const bazaarWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), 'vscode-bazaar-bzr-workspace-'));
   try {
@@ -45,6 +69,27 @@ async function main() {
     });
   } finally {
     removeTemporaryDirectory(bazaarWorkspace);
+  }
+}
+
+function parseSingleMode(argv) {
+  const singleIndex = argv.indexOf('--single');
+  if (singleIndex < 0) {
+    return undefined;
+  }
+  return argv[singleIndex + 1];
+}
+
+function runChildIntegrationMode(mode) {
+  const result = spawnSync(process.execPath, [__filename, '--single', mode], {
+    cwd: path.resolve(__dirname, '..'),
+    env: process.env,
+    stdio: 'inherit',
+    windowsHide: true
+  });
+
+  if (result.status !== 0) {
+    throw new Error(`${mode} integration tests failed with exit code ${result.status}`);
   }
 }
 
@@ -87,10 +132,6 @@ main().catch((error) => {
   console.error(error);
   process.exit(1);
 });
-
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 function findLocalVSCodeExecutable() {
   if (process.env.VSCODE_TEST_EXECUTABLE_PATH) {

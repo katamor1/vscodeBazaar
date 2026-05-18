@@ -84,6 +84,8 @@ Bazaar CLI をインストールし、`bzr` として実行できるようにし
 - `bazaar.blame.enabledFormat`: カーソル行または選択範囲の行末 blame 装飾形式。
 - `bazaar.dangerousOperations.requireTypedConfirmation`: 破壊的操作の前に、確認フレーズの正確な入力を要求するか。
 
+履歴、`BAZAAR EXPLORE`、グラフはサイドバーからエディター領域へ拡大表示できます。Webview 表示ではスクロールが末尾 5% 付近に到達すると追加履歴を自動読み込みします。グラフと拡大履歴の日時は分単位の `yy/MM/dd HH:mm` 形式で表示します。
+
 ## 安全性と劣化動作
 
 - Bazaar コマンドを実行する前にリビジョン入力を検証します。不正な履歴、グラフ、blame 操作は、無効なリビジョンを `bzr` に渡さず、短い警告で止めます。
@@ -138,7 +140,7 @@ npm audit --omit=dev
 npm run package
 ```
 
-`npm run package` は `prepackage` により `npm run compile`、`npm test`、`npm run test:integration`、`npm audit --omit=dev` を先に実行します。このローカル VSIX リリースラインでは、`npm run package` により `vscode-bazaar-0.2.10.vsix` が生成されます。
+`npm run package` は `prepackage` により `npm run compile`、`npm test`、`npm run test:integration`、`npm audit --omit=dev` を先に実行します。このローカル VSIX リリースラインでは、`npm run package` により `vscode-bazaar-0.2.11.vsix` が生成されます。
 
 ## 補足
 

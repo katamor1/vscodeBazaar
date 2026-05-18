@@ -7,14 +7,18 @@ import { expandUnknownDirectories } from '../bazaar/unknownExpansion';
 import {
   createBazaarExploreModel,
   createEmptyBazaarExploreSnapshot,
+  extendBazaarExploreHistory,
   type BazaarExploreLoadError,
   type BazaarExploreModel,
   type BazaarExploreSnapshot
 } from './exploreSnapshot';
 import { BazaarRevisionCache } from './revisionCache';
 
+type ExploreHost = vscode.WebviewView | vscode.WebviewPanel;
+
 type ExploreMessage =
   | { command: 'refresh' }
+  | { command: 'loadMore' }
   | { command: 'openOutput' }
   | { command: 'showCommit'; revisionId?: unknown }
   | { command: 'showDiff'; revisionId?: unknown; path?: unknown };
@@ -28,7 +32,10 @@ const maxExploreRevisions = 40;
 
 export class BazaarExploreView implements vscode.WebviewViewProvider, vscode.Disposable {
   private view: vscode.WebviewView | undefined;
+  private panel: vscode.WebviewPanel | undefined;
   private snapshot: BazaarExploreSnapshot;
+  private currentHistoryLimit = 0;
+  private historyLoading = false;
 
   constructor(
     private readonly rootPath: string,
@@ -42,10 +49,7 @@ export class BazaarExploreView implements vscode.WebviewViewProvider, vscode.Dis
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
     this.view = webviewView;
-    webviewView.webview.options = { enableScripts: true };
-    webviewView.webview.onDidReceiveMessage((message: ExploreMessage) => {
-      void this.handleMessage(message);
-    });
+    this.configureHost(webviewView);
     this.render();
     if (!this.snapshot.loadedAt) {
       void this.refresh();
@@ -58,6 +62,7 @@ export class BazaarExploreView implements vscode.WebviewViewProvider, vscode.Dis
     const includeMerged = config.get<boolean>('history.includeMerged', true);
     const expandUnknowns = config.get<boolean>('unknown.expandDirectories', true);
     const maxExpandedFiles = config.get<number>('unknown.maxExpandedFiles', 1000);
+    this.currentHistoryLimit = Math.max(1, historyLimit);
 
     const [
       changes,
@@ -103,14 +108,58 @@ export class BazaarExploreView implements vscode.WebviewViewProvider, vscode.Dis
     this.render();
   }
 
+  async loadMore(): Promise<void> {
+    const config = vscode.workspace.getConfiguration('bazaar');
+    const pageSize = Math.max(1, config.get<number>('history.limit', 200));
+    const includeMerged = config.get<boolean>('history.includeMerged', true);
+    this.currentHistoryLimit = Math.max(this.currentHistoryLimit || maxExploreRevisions, maxExploreRevisions) + pageSize;
+    this.historyLoading = true;
+    this.render();
+    try {
+      const revisions = await this.loadPart('history', this.snapshot.revisions, () => this.revisionCache.get({
+        limit: this.currentHistoryLimit,
+        includeMerged
+      }));
+      const nextSnapshot = extendBazaarExploreHistory(this.snapshot, revisions.value);
+      this.snapshot = revisions.error
+        ? { ...nextSnapshot, errors: [...nextSnapshot.errors, revisions.error] }
+        : nextSnapshot;
+    } finally {
+      this.historyLoading = false;
+      this.render();
+    }
+  }
+
   open(): void {
     void vscode.commands.executeCommand('workbench.view.scm')
       .then(() => vscode.commands.executeCommand('bazaarExplore.focus'))
       .then(undefined, () => undefined);
   }
 
+  openEditor(): void {
+    if (!this.panel) {
+      this.panel = vscode.window.createWebviewPanel(
+        'bazaarExploreEditor',
+        'BAZAAR EXPLORE',
+        vscode.ViewColumn.Active,
+        { enableScripts: true, retainContextWhenHidden: true }
+      );
+      this.panel.onDidDispose(() => {
+        this.panel = undefined;
+      });
+      this.configureHost(this.panel);
+    }
+    this.panel.reveal(vscode.ViewColumn.Active);
+    this.render();
+    if (!this.snapshot.loadedAt) {
+      void this.refresh();
+    }
+  }
+
   dispose(): void {
     this.view = undefined;
+    this.panel?.dispose();
+    this.panel = undefined;
   }
 
   isVisible(): boolean {
@@ -121,6 +170,10 @@ export class BazaarExploreView implements vscode.WebviewViewProvider, vscode.Dis
     try {
       if (message.command === 'refresh') {
         await this.refresh();
+        return;
+      }
+      if (message.command === 'loadMore') {
+        await this.loadMore();
         return;
       }
       if (message.command === 'openOutput') {
@@ -168,15 +221,29 @@ export class BazaarExploreView implements vscode.WebviewViewProvider, vscode.Dis
   }
 
   private render(): void {
-    if (!this.view) {
-      return;
+    const html = renderExploreHtml(createBazaarExploreModel(this.snapshot), {
+      canLoadMore: this.snapshot.revisions.length >= (this.currentHistoryLimit || maxExploreRevisions),
+      loading: this.historyLoading
+    });
+    if (this.view) {
+      this.view.webview.html = html;
     }
-    this.view.webview.html = renderExploreHtml(createBazaarExploreModel(this.snapshot));
+    if (this.panel) {
+      this.panel.webview.html = html;
+    }
+  }
+
+  private configureHost(host: ExploreHost): void {
+    host.webview.options = { enableScripts: true };
+    host.webview.onDidReceiveMessage((message: ExploreMessage) => {
+      void this.handleMessage(message);
+    });
   }
 }
 
-function renderExploreHtml(model: BazaarExploreModel): string {
+function renderExploreHtml(model: BazaarExploreModel, loadMore: { canLoadMore: boolean; loading: boolean }): string {
   const modelJson = JSON.stringify(model).replace(/</g, '\\u003c');
+  const loadMoreJson = JSON.stringify(loadMore);
   return `<!doctype html>
 <html>
 <head>
@@ -390,6 +457,7 @@ function renderExploreHtml(model: BazaarExploreModel): string {
       <div class="root" title="${escapeHtml(model.rootPath)}">${escapeHtml(model.rootPath)}</div>
     </div>
     <div class="actions">
+      <button class="action secondary" id="load-more" title="さらに読み込む" aria-label="さらに読み込む">追加</button>
       <button class="action" id="refresh" title="更新" aria-label="更新">更新</button>
       <button class="action secondary" id="output" title="出力" aria-label="出力">出力</button>
     </div>
@@ -422,11 +490,15 @@ function renderExploreHtml(model: BazaarExploreModel): string {
   <script>
     const vscode = acquireVsCodeApi();
     const model = ${modelJson};
+    let loadState = ${loadMoreJson};
     const revisions = new Map(model.revisions.map((revision) => [revision.graphId, revision]));
     let selectedRevisionId = model.revisions[0]?.graphId;
 
     document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ command: 'refresh' }));
     document.getElementById('output').addEventListener('click', () => vscode.postMessage({ command: 'openOutput' }));
+    document.getElementById('load-more').style.display = loadState.canLoadMore ? '' : 'none';
+    document.getElementById('load-more').addEventListener('click', () => requestLoadMore());
+    window.addEventListener('scroll', () => maybeAutoLoadMore());
 
     document.querySelectorAll('[data-revision-id]').forEach((element) => {
       element.addEventListener('click', () => {
@@ -484,6 +556,24 @@ function renderExploreHtml(model: BazaarExploreModel): string {
         return CSS.escape(value);
       }
       return String(value).replace(/"/g, '\\\\"');
+    }
+
+    function maybeAutoLoadMore() {
+      const element = document.scrollingElement || document.documentElement;
+      if (!element || !loadState.canLoadMore || loadState.loading || element.scrollHeight <= 0) {
+        return;
+      }
+      if ((element.scrollTop + element.clientHeight) / element.scrollHeight >= 0.95) {
+        requestLoadMore();
+      }
+    }
+
+    function requestLoadMore() {
+      if (!loadState.canLoadMore || loadState.loading) {
+        return;
+      }
+      loadState.loading = true;
+      vscode.postMessage({ command: 'loadMore' });
     }
 
     function escapeHtml(value) {

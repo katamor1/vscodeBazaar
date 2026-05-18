@@ -16,21 +16,31 @@ import {
   revisionSpecForDocument
 } from './historyTarget';
 import { BazaarRevisionCache } from './revisionCache';
+import { createHistoryEditorPayload, type HistoryEditorPayload } from './historyEditorModel';
 
 type HistoryNode =
   | { type: 'revision'; revision: BazaarRevision }
   | { type: 'detail'; label: string; description?: string; icon?: string; command?: vscode.Command };
 
+type HistoryEditorMessage =
+  | { command: 'refresh' }
+  | { command: 'loadMore' }
+  | { command: 'showCommit'; revisionId?: unknown }
+  | { command: 'showDiff'; revisionId?: unknown; path?: unknown }
+  | { command: 'openFile'; revisionId?: unknown; path?: unknown };
+
 export class BazaarHistoryView implements vscode.TreeDataProvider<HistoryNode>, vscode.Disposable {
   private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<HistoryNode | undefined>();
   readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
 
+  private panel: vscode.WebviewPanel | undefined;
   private revisions: BazaarRevision[] = [];
   private visibleRevisions: BazaarRevision[] = [];
   private query = '';
   private pathFilter: string | undefined;
   private loaded = false;
   private loading = false;
+  private currentLimit = 0;
 
   constructor(
     private readonly rootPath: string,
@@ -141,7 +151,8 @@ export class BazaarHistoryView implements vscode.TreeDataProvider<HistoryNode>, 
   async refresh(pathFilter?: string): Promise<void> {
     this.pathFilter = pathFilter;
     this.revisionCache.invalidate();
-    await this.load(pathFilter);
+    this.currentLimit = this.historyPageSize();
+    await this.load(pathFilter, this.currentLimit);
   }
 
   async ensureLoaded(): Promise<void> {
@@ -155,18 +166,49 @@ export class BazaarHistoryView implements vscode.TreeDataProvider<HistoryNode>, 
     this.loaded = false;
     this.revisions = [];
     this.visibleRevisions = [];
+    this.currentLimit = 0;
     this.revisionCache.invalidate();
     this.onDidChangeTreeDataEmitter.fire(undefined);
+    void this.postEditorData();
   }
 
-  private async load(pathFilter?: string): Promise<void> {
+  async loadMore(): Promise<void> {
+    const pageSize = this.historyPageSize();
+    this.currentLimit = Math.max(pageSize, this.currentLimit || pageSize) + pageSize;
+    this.revisionCache.invalidate();
+    await this.load(this.pathFilter, this.currentLimit);
+  }
+
+  openEditor(): void {
+    if (!this.panel) {
+      this.panel = vscode.window.createWebviewPanel(
+        'bazaarHistoryEditor',
+        'Bazaar 履歴',
+        vscode.ViewColumn.Active,
+        { enableScripts: true, retainContextWhenHidden: true }
+      );
+      this.panel.onDidDispose(() => {
+        this.panel = undefined;
+      });
+      this.configureEditorPanel(this.panel);
+    }
+    this.panel.reveal(vscode.ViewColumn.Active);
+    if (!this.loaded && !this.loading) {
+      void this.ensureLoaded();
+    } else {
+      void this.postEditorData();
+    }
+  }
+
+  private async load(pathFilter?: string, limit = this.currentLimit || this.historyPageSize()): Promise<void> {
     this.loading = true;
     this.onDidChangeTreeDataEmitter.fire(undefined);
+    void this.postEditorData();
     const config = vscode.workspace.getConfiguration('bazaar');
-    const limit = config.get<number>('history.limit', 200);
     const includeMerged = config.get<boolean>('history.includeMerged', true);
+    this.currentLimit = Math.max(1, limit);
     try {
-      this.revisions = await this.revisionCache.get({ limit, includeMerged, path: pathFilter });
+      this.revisions = await this.revisionCache.get({ limit: this.currentLimit, includeMerged, path: pathFilter });
       this.visibleRevisions = this.query ? searchRevisions(this.revisions, this.query) : this.revisions;
       this.loaded = true;
     } catch (error) {
@@ -175,6 +217,7 @@ export class BazaarHistoryView implements vscode.TreeDataProvider<HistoryNode>, 
     } finally {
       this.loading = false;
       this.onDidChangeTreeDataEmitter.fire(undefined);
+      void this.postEditorData();
     }
   }
 
@@ -194,7 +237,7 @@ export class BazaarHistoryView implements vscode.TreeDataProvider<HistoryNode>, 
     if (this.query && this.visibleRevisions.length === 0) {
       const config = vscode.workspace.getConfiguration('bazaar');
       this.revisions = await this.revisionCache.get({
-        limit: config.get<number>('history.limit', 200),
+        limit: this.currentLimit || config.get<number>('history.limit', 200),
         includeMerged: config.get<boolean>('history.includeMerged', true),
         path: this.pathFilter,
         match: this.query
@@ -202,6 +245,7 @@ export class BazaarHistoryView implements vscode.TreeDataProvider<HistoryNode>, 
       this.visibleRevisions = this.revisions;
     }
     this.onDidChangeTreeDataEmitter.fire(undefined);
+    await this.postEditorData();
   }
 
   async clearFileFilter(): Promise<void> {
@@ -308,6 +352,78 @@ export class BazaarHistoryView implements vscode.TreeDataProvider<HistoryNode>, 
 
   dispose(): void {
     this.onDidChangeTreeDataEmitter.dispose();
+    this.panel?.dispose();
+    this.panel = undefined;
+  }
+
+  private configureEditorPanel(panel: vscode.WebviewPanel): void {
+    panel.webview.options = { enableScripts: true };
+    panel.webview.html = renderHistoryEditorShellHtml();
+    panel.webview.onDidReceiveMessage((message: HistoryEditorMessage) => {
+      void this.handleEditorMessage(message);
+    });
+  }
+
+  private async handleEditorMessage(message: HistoryEditorMessage): Promise<void> {
+    if (message.command === 'refresh') {
+      await this.refresh(this.pathFilter);
+      return;
+    }
+    if (message.command === 'loadMore') {
+      await this.loadMore();
+      return;
+    }
+
+    const revision = this.revisionForEditorMessage(message.revisionId);
+    if (!revision) {
+      return;
+    }
+    if (message.command === 'showCommit') {
+      await this.showCommit(revision);
+    } else if (message.command === 'showDiff') {
+      const changedPath = this.changedPathForEditorMessage(revision, message.path);
+      await this.showCommitDiff(revision, changedPath);
+    } else if (message.command === 'openFile') {
+      const changedPath = this.changedPathForEditorMessage(revision, message.path);
+      if (changedPath) {
+        await this.openFileAtRevision(revision, changedPath);
+      }
+    }
+  }
+
+  private revisionForEditorMessage(value: unknown): BazaarRevision | undefined {
+    const revisionSpec = normalizeRevisionSpec(value);
+    if (!revisionSpec) {
+      return undefined;
+    }
+    return this.visibleRevisions.find((revision) =>
+      normalizeRevisionSpec(revision.revisionId) === revisionSpec ||
+      normalizeRevisionSpec(revision.revno) === revisionSpec
+    );
+  }
+
+  private changedPathForEditorMessage(revision: BazaarRevision, value: unknown): string | undefined {
+    return typeof value === 'string' && revision.changedPaths?.includes(value) ? value : undefined;
+  }
+
+  private async postEditorData(): Promise<void> {
+    if (!this.panel) {
+      return;
+    }
+    const payload = this.createEditorPayload();
+    await this.panel.webview.postMessage({ command: 'setHistory', payload });
+  }
+
+  private createEditorPayload(): HistoryEditorPayload {
+    return createHistoryEditorPayload(this.visibleRevisions, {
+      limit: this.currentLimit || this.historyPageSize(),
+      pathFilter: this.pathFilter,
+      loading: this.loading
+    });
+  }
+
+  private historyPageSize(): number {
+    return Math.max(1, vscode.workspace.getConfiguration('bazaar').get<number>('history.limit', 200));
   }
 
   private async openRevisionDiff(plan: Extract<HistoryCommitDiffPlan, { kind: 'fileDiff' }>): Promise<void> {
@@ -327,6 +443,171 @@ export class BazaarHistoryView implements vscode.TreeDataProvider<HistoryNode>, 
     );
     await vscode.window.showTextDocument(document, { preview: true });
   }
+}
+
+function renderHistoryEditorShellHtml(): string {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    html, body { height: 100%; }
+    body { margin: 0; color: var(--vscode-foreground); background: var(--vscode-editor-background); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); }
+    button { font: inherit; cursor: pointer; }
+    .toolbar { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 6px; padding: 8px; border-bottom: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-background); }
+    .toolbar .spacer { flex: 1; }
+    .filter { overflow: hidden; color: var(--vscode-descriptionForeground); text-overflow: ellipsis; white-space: nowrap; }
+    .action { border: 0; color: var(--vscode-button-foreground); background: var(--vscode-button-background); padding: 4px 8px; }
+    .action.secondary { color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
+    .layout { display: grid; grid-template-columns: minmax(360px, 1fr) minmax(320px, 38vw); height: calc(100vh - 42px); min-height: 0; }
+    .list, .detail { overflow: auto; min-width: 0; }
+    .detail { border-left: 1px solid var(--vscode-panel-border); padding: 12px; }
+    .revision { display: grid; grid-template-columns: 84px minmax(0, 1fr) 116px; gap: 8px; width: 100%; border: 0; border-bottom: 1px solid var(--vscode-panel-border); color: var(--vscode-foreground); background: transparent; padding: 8px 10px; text-align: left; }
+    .revision:hover, .revision.selected { background: var(--vscode-list-hoverBackground); }
+    .revno { color: var(--vscode-charts-blue); font-weight: 600; }
+    .summary, .meta, .date { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .meta, .date, .empty { color: var(--vscode-descriptionForeground); }
+    h2 { margin: 0 0 8px; font-size: 14px; line-height: 20px; }
+    .section { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--vscode-panel-border); }
+    .files { display: flex; flex-direction: column; gap: 5px; }
+    .file-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px; align-items: center; }
+    .file-name { overflow: hidden; color: var(--vscode-descriptionForeground); text-overflow: ellipsis; white-space: nowrap; }
+    .small { border: 0; color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); padding: 3px 6px; }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <button class="action" id="refresh">更新</button>
+    <button class="action secondary" id="load-more">さらに読み込む</button>
+    <div class="spacer"></div>
+    <div class="filter" id="filter"></div>
+  </div>
+  <div class="layout">
+    <main class="list" id="list">Bazaar 履歴を読み込み中...</main>
+    <aside class="detail" id="detail">リビジョンを選択してください</aside>
+  </div>
+  <script>
+    const vscode = acquireVsCodeApi();
+    let revisions = [];
+    let byId = new Map();
+    let selected;
+    let canLoadMore = false;
+    let loadingMore = false;
+    const list = document.getElementById('list');
+
+    document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ command: 'refresh' }));
+    document.getElementById('load-more').addEventListener('click', () => requestLoadMore());
+    list.addEventListener('scroll', () => maybeAutoLoadMore(list));
+
+    window.addEventListener('message', (event) => {
+      if (event.data?.command !== 'setHistory') {
+        return;
+      }
+      renderHistory(event.data.payload);
+    });
+
+    function renderHistory(payload) {
+      revisions = payload.revisions || [];
+      byId = new Map(revisions.map((revision) => [revision.graphId, revision]));
+      canLoadMore = Boolean(payload.canLoadMore);
+      loadingMore = Boolean(payload.loading);
+      document.getElementById('load-more').style.display = canLoadMore ? '' : 'none';
+      document.getElementById('filter').textContent = payload.pathFilter ? 'file: ' + payload.pathFilter : '';
+
+      if (payload.loading && revisions.length === 0) {
+        list.textContent = 'Bazaar 履歴を読み込み中...';
+        return;
+      }
+      if (revisions.length === 0) {
+        list.innerHTML = '<div class="empty" style="padding: 12px;">表示する履歴がありません。</div>';
+        document.getElementById('detail').textContent = 'リビジョンを選択してください';
+        return;
+      }
+
+      list.innerHTML = revisions.map((revision) =>
+        '<button class="revision" data-revision-id="' + escapeHtml(revision.graphId) + '">' +
+          '<span class="revno">' + escapeHtml(revision.revno) + '</span>' +
+          '<span><span class="summary">' + escapeHtml(revision.summary) + '</span><br><span class="meta">' + escapeHtml([revision.committer, revision.branchNick, revision.tags.map((tag) => '#' + tag).join(' ')].filter(Boolean).join(' / ')) + '</span></span>' +
+          '<span class="date">' + escapeHtml(revision.displayTimestamp || revision.timestamp) + '</span>' +
+        '</button>'
+      ).join('');
+
+      document.querySelectorAll('[data-revision-id]').forEach((button) => {
+        button.addEventListener('click', () => {
+          selected = button.dataset.revisionId;
+          document.querySelectorAll('[data-revision-id]').forEach((item) => item.classList.toggle('selected', item === button));
+          renderDetail(byId.get(selected));
+        });
+      });
+      if (!selected || !byId.has(selected)) {
+        selected = revisions[0]?.graphId;
+      }
+      const selectedButton = document.querySelector('[data-revision-id="' + cssEscape(selected || '') + '"]');
+      if (selectedButton) {
+        selectedButton.classList.add('selected');
+      }
+      renderDetail(byId.get(selected));
+    }
+
+    function renderDetail(revision) {
+      const detail = document.getElementById('detail');
+      if (!revision) {
+        detail.textContent = 'リビジョンを選択してください';
+        return;
+      }
+      const tags = revision.tags.length ? revision.tags.map((tag) => '#' + escapeHtml(tag)).join(' ') : '(なし)';
+      const parents = revision.parentIds.length ? revision.parentIds.map(escapeHtml).join('<br>') : '(なし)';
+      const files = revision.changedPaths.length
+        ? revision.changedPaths.map((file) =>
+            '<div class="file-row">' +
+              '<span class="file-name" title="' + escapeHtml(file) + '">' + escapeHtml(file) + '</span>' +
+              '<button class="small file-diff" data-path="' + escapeHtml(file) + '">差分</button>' +
+              '<button class="small file-open" data-path="' + escapeHtml(file) + '">開く</button>' +
+            '</div>'
+          ).join('')
+        : '<div class="empty">変更パスはログに含まれていません。</div>';
+      detail.innerHTML =
+        '<h2>' + escapeHtml(revision.revno + ' ' + revision.summary) + '</h2>' +
+        '<div class="meta">' + escapeHtml(revision.displayTimestamp || revision.timestamp) + '<br>' + escapeHtml(revision.committer) + '<br>' + escapeHtml(revision.branchNick || '') + '</div>' +
+        '<div class="section"><button class="action" id="show-commit">コミットを表示</button> <button class="action secondary" id="show-diff">コミット差分</button></div>' +
+        '<div class="section"><div class="meta">revision-id<br>' + escapeHtml(revision.revisionId || '(なし)') + '</div><div class="meta">parents<br>' + parents + '</div><div class="meta">tags<br>' + tags + '</div></div>' +
+        '<div class="section files">' + files + '</div>';
+      document.getElementById('show-commit').addEventListener('click', () => vscode.postMessage({ command: 'showCommit', revisionId: revision.graphId }));
+      document.getElementById('show-diff').addEventListener('click', () => vscode.postMessage({ command: 'showDiff', revisionId: revision.graphId }));
+      document.querySelectorAll('.file-diff').forEach((button) => button.addEventListener('click', () => vscode.postMessage({ command: 'showDiff', revisionId: revision.graphId, path: button.dataset.path })));
+      document.querySelectorAll('.file-open').forEach((button) => button.addEventListener('click', () => vscode.postMessage({ command: 'openFile', revisionId: revision.graphId, path: button.dataset.path })));
+    }
+
+    function maybeAutoLoadMore(element) {
+      if (!element || !canLoadMore || loadingMore || element.scrollHeight <= 0) {
+        return;
+      }
+      if ((element.scrollTop + element.clientHeight) / element.scrollHeight >= 0.95) {
+        requestLoadMore();
+      }
+    }
+
+    function requestLoadMore() {
+      if (!canLoadMore || loadingMore) {
+        return;
+      }
+      loadingMore = true;
+      vscode.postMessage({ command: 'loadMore' });
+    }
+
+    function cssEscape(value) {
+      if (window.CSS && CSS.escape) {
+        return CSS.escape(value);
+      }
+      return String(value).replace(/"/g, '\\\\"');
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+  </script>
+</body>
+</html>`;
 }
 
 function firstLine(message: string): string {

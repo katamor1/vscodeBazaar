@@ -2,7 +2,7 @@
   "name": "vscode-bazaar",
   "displayName": "Bazaar SCM",
   "description": "Visual Studio Code で Bazaar の状態、履歴、グラフ、blame、ブランチ、タグ、シェルブ、競合、差分を扱う SCM 拡張です。",
-  "version": "0.2.10",
+  "version": "0.2.11",
   "publisher": "local",
   "license": "UNLICENSED",
   "engines": {
@@ -185,6 +185,11 @@
         "icon": "$(compass)"
       },
       {
+        "command": "bazaar.explore.openEditor",
+        "title": "Bazaar: BAZAAR EXPLORE をエディターで開く",
+        "icon": "$(open-preview)"
+      },
+      {
         "command": "bazaar.explore.refresh",
         "title": "Bazaar: BAZAAR EXPLORE を更新",
         "icon": "$(refresh)"
@@ -344,6 +349,11 @@
         "command": "bazaar.history.showFileHistory",
         "title": "Bazaar: ファイル履歴を表示",
         "icon": "$(history)"
+      },
+      {
+        "command": "bazaar.history.openEditor",
+        "title": "Bazaar: 履歴をエディターで開く",
+        "icon": "$(open-preview)"
       },
       {
         "command": "bazaar.history.showCommit",
@@ -675,6 +685,11 @@
       ],
       "view/title": [
         {
+          "command": "bazaar.explore.openEditor",
+          "when": "view == bazaarExplore && bazaar.repositoryReady && bazaar.featureEnabled",
+          "group": "navigation@1"
+        },
+        {
           "command": "bazaar.explore.refresh",
           "when": "view == bazaarExplore && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "navigation"
@@ -693,6 +708,11 @@
           "command": "bazaar.history.clearFileFilter",
           "when": "view == bazaarHistory && bazaar.repositoryReady && bazaar.featureEnabled",
           "group": "navigation"
+        },
+        {
+          "command": "bazaar.history.openEditor",
+          "when": "view == bazaarHistory && bazaar.repositoryReady && bazaar.featureEnabled",
+          "group": "navigation@1"
         },
         {
           "command": "bazaar.branch.refresh",
@@ -876,6 +896,10 @@
           "when": "bazaar.repositoryReady && bazaar.featureEnabled"
         },
         {
+          "command": "bazaar.explore.openEditor",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
           "command": "bazaar.explore.refresh",
           "when": "bazaar.repositoryReady && bazaar.featureEnabled"
         },
@@ -1004,6 +1028,10 @@
         },
         {
           "command": "bazaar.history.showFileHistory",
+          "when": "bazaar.repositoryReady && bazaar.featureEnabled"
+        },
+        {
+          "command": "bazaar.history.openEditor",
           "when": "bazaar.repositoryReady && bazaar.featureEnabled"
         },
         {

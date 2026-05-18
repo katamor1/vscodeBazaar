@@ -10,6 +10,7 @@ import type {
   BazaarTag,
   RevisionGraph
 } from '../bazaar/types';
+import { buildGraph } from '../bazaar/graphModel';
 
 export type BazaarExploreHealth = 'clean' | 'dirty' | 'conflict' | 'partial';
 export type BazaarExploreStatusGroupId = BazaarChangeKind | 'conflict';
@@ -162,6 +163,18 @@ export function createBazaarExploreModel(snapshot: BazaarExploreSnapshot): Bazaa
     graph: snapshot.graph,
     infoItems: createInfoItems(snapshot.info),
     errors: snapshot.errors
+  };
+}
+
+export function extendBazaarExploreHistory(
+  snapshot: BazaarExploreSnapshot,
+  revisions: readonly BazaarRevision[]
+): BazaarExploreSnapshot {
+  return {
+    ...snapshot,
+    loadedAt: new Date().toISOString(),
+    revisions,
+    graph: buildGraph(revisions)
   };
 }
 
