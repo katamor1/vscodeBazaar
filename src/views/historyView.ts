@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import type { BazaarClient } from '../bazaar/client';
 import { searchRevisions } from '../bazaar/historyParser';
+import { decodeBazaarPatchOutput } from '../bazaar/outputEncoding';
 import { normalizeRevisionSpec } from '../bazaar/revisionSpec';
 import type { BazaarRevision } from '../bazaar/types';
 import type { BazaarGeneratedDocumentProvider } from '../scm/generatedDocumentProvider';
@@ -17,6 +18,7 @@ import {
 } from './historyTarget';
 import { BazaarRevisionCache } from './revisionCache';
 import { createHistoryEditorPayload, type HistoryEditorPayload } from './historyEditorModel';
+import { clearHistoryFilters } from './historyFilters';
 
 type HistoryNode =
   | { type: 'revision'; revision: BazaarRevision }
@@ -249,7 +251,12 @@ export class BazaarHistoryView implements vscode.TreeDataProvider<HistoryNode>, 
   }
 
   async clearFileFilter(): Promise<void> {
-    await this.refresh(undefined);
+    const filters = clearHistoryFilters({
+      query: this.query,
+      pathFilter: this.pathFilter
+    });
+    this.query = filters.query;
+    await this.refresh(filters.pathFilter);
   }
 
   async copyRevisionId(target?: unknown): Promise<void> {
@@ -435,7 +442,10 @@ export class BazaarHistoryView implements vscode.TreeDataProvider<HistoryNode>, 
   }
 
   private async openCommitDiffDocument(plan: Extract<HistoryCommitDiffPlan, { kind: 'patchDocument' }>): Promise<void> {
-    const diff = await this.client.diffChange(plan.revisionSpec, plan.changedPath);
+    const diff = decodeBazaarPatchOutput(
+      await this.client.diffChangeBytes(plan.revisionSpec, plan.changedPath),
+      { preferredEncoding: repositoryFileEncoding() }
+    );
     const document = await this.generatedProvider.openDocument(
       plan.title,
       diff.trimEnd() || '(差分なし)',
@@ -473,12 +483,12 @@ function renderHistoryEditorShellHtml(): string {
     .file-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px; align-items: center; }
     .file-name { overflow: hidden; color: var(--vscode-descriptionForeground); text-overflow: ellipsis; white-space: nowrap; }
     .small { border: 0; color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); padding: 3px 6px; }
+    .load-more-sentinel { padding: 12px; border-bottom: 1px solid var(--vscode-panel-border); color: var(--vscode-descriptionForeground); text-align: center; }
   </style>
 </head>
 <body>
   <div class="toolbar">
     <button class="action" id="refresh">更新</button>
-    <button class="action secondary" id="load-more">さらに読み込む</button>
     <div class="spacer"></div>
     <div class="filter" id="filter"></div>
   </div>
@@ -493,11 +503,10 @@ function renderHistoryEditorShellHtml(): string {
     let selected;
     let canLoadMore = false;
     let loadingMore = false;
+    let loadMoreObserver;
     const list = document.getElementById('list');
 
     document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ command: 'refresh' }));
-    document.getElementById('load-more').addEventListener('click', () => requestLoadMore());
-    list.addEventListener('scroll', () => maybeAutoLoadMore(list));
 
     window.addEventListener('message', (event) => {
       if (event.data?.command !== 'setHistory') {
@@ -511,7 +520,6 @@ function renderHistoryEditorShellHtml(): string {
       byId = new Map(revisions.map((revision) => [revision.graphId, revision]));
       canLoadMore = Boolean(payload.canLoadMore);
       loadingMore = Boolean(payload.loading);
-      document.getElementById('load-more').style.display = canLoadMore ? '' : 'none';
       document.getElementById('filter').textContent = payload.pathFilter ? 'file: ' + payload.pathFilter : '';
 
       if (payload.loading && revisions.length === 0) {
@@ -530,7 +538,8 @@ function renderHistoryEditorShellHtml(): string {
           '<span><span class="summary">' + escapeHtml(revision.summary) + '</span><br><span class="meta">' + escapeHtml([revision.committer, revision.branchNick, revision.tags.map((tag) => '#' + tag).join(' ')].filter(Boolean).join(' / ')) + '</span></span>' +
           '<span class="date">' + escapeHtml(revision.displayTimestamp || revision.timestamp) + '</span>' +
         '</button>'
-      ).join('');
+      ).join('') + renderLoadMoreSentinel();
+      observeLoadMoreSentinel(list);
 
       document.querySelectorAll('[data-revision-id]').forEach((button) => {
         button.addEventListener('click', () => {
@@ -578,13 +587,34 @@ function renderHistoryEditorShellHtml(): string {
       document.querySelectorAll('.file-open').forEach((button) => button.addEventListener('click', () => vscode.postMessage({ command: 'openFile', revisionId: revision.graphId, path: button.dataset.path })));
     }
 
-    function maybeAutoLoadMore(element) {
-      if (!element || !canLoadMore || loadingMore || element.scrollHeight <= 0) {
+    function renderLoadMoreSentinel() {
+      if (!canLoadMore && !loadingMore) {
+        return '';
+      }
+      return '<div id="load-more-sentinel" class="load-more-sentinel" aria-busy="' + String(loadingMore) + '">' +
+        (loadingMore ? '続きを読み込み中...' : '続きを表示') +
+        '</div>';
+    }
+
+    function observeLoadMoreSentinel(root) {
+      if (loadMoreObserver) {
+        loadMoreObserver.disconnect();
+        loadMoreObserver = undefined;
+      }
+      const sentinel = document.getElementById('load-more-sentinel');
+      if (!sentinel || !canLoadMore || loadingMore) {
         return;
       }
-      if ((element.scrollTop + element.clientHeight) / element.scrollHeight >= 0.95) {
-        requestLoadMore();
+      if (!('IntersectionObserver' in window)) {
+        sentinel.addEventListener('click', () => requestLoadMore());
+        return;
       }
+      loadMoreObserver = new IntersectionObserver((entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          requestLoadMore();
+        }
+      }, { root });
+      loadMoreObserver.observe(sentinel);
     }
 
     function requestLoadMore() {
@@ -592,6 +622,11 @@ function renderHistoryEditorShellHtml(): string {
         return;
       }
       loadingMore = true;
+      const sentinel = document.getElementById('load-more-sentinel');
+      if (sentinel) {
+        sentinel.textContent = '続きを読み込み中...';
+        sentinel.setAttribute('aria-busy', 'true');
+      }
       vscode.postMessage({ command: 'loadMore' });
     }
 
@@ -620,4 +655,8 @@ function showNoValidRevisionWarning(): void {
 
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function repositoryFileEncoding(): string | undefined {
+  return vscode.workspace.getConfiguration('files').get<string>('encoding');
 }

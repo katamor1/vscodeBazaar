@@ -104,6 +104,8 @@ export interface CommandResult {
   stdout: string;
   stderr: string;
   exitCode: number;
+  stdoutBytes?: Buffer;
+  stderrBytes?: Buffer;
 }
 
 export type RunCommand = (args: readonly string[]) => Promise<CommandResult>;

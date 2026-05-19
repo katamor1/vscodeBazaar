@@ -2,6 +2,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
 export type BranchSwitchAction =
+  | { kind: 'alreadyCurrent'; targetPath: string }
   | { kind: 'openWorktree'; targetPath: string }
   | { kind: 'bzrSwitch'; target: string; force: boolean };
 
@@ -17,7 +18,7 @@ export async function resolveBranchSwitchAction(
   const resolvedTarget = resolveTargetPath(resolvedRoot, target);
 
   if (samePath(resolvedRoot, resolvedTarget)) {
-    return { kind: 'bzrSwitch', target, force };
+    return { kind: 'alreadyCurrent', targetPath: resolvedRoot };
   }
 
   try {

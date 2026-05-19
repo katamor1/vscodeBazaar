@@ -7,6 +7,11 @@ vi.mock('vscode', () => ({
     event = vi.fn();
     dispose = vi.fn();
   },
+  workspace: {
+    getConfiguration: vi.fn(() => ({
+      get: vi.fn(() => 'utf8')
+    }))
+  },
   Uri: {
     from(value: { scheme: string; path: string; query: string }) {
       return {
@@ -21,15 +26,17 @@ import { BazaarOriginalDocumentProvider } from '../src/scm/originalDocumentProvi
 
 describe('BazaarOriginalDocumentProvider', () => {
   let catBasis: ReturnType<typeof vi.fn>;
+  let catBasisBytes: ReturnType<typeof vi.fn>;
   let appendLine: ReturnType<typeof vi.fn>;
   let provider: BazaarOriginalDocumentProvider;
 
   beforeEach(() => {
     catBasis = vi.fn().mockResolvedValue('basis content');
+    catBasisBytes = vi.fn().mockResolvedValue(Buffer.from('basis content', 'utf8'));
     appendLine = vi.fn();
     provider = new BazaarOriginalDocumentProvider(
       'C:/repo',
-      { catBasis } as unknown as BazaarClient,
+      { catBasis, catBasisBytes } as unknown as BazaarClient,
       { appendLine } as unknown as OutputChannel
     );
   });
@@ -38,7 +45,7 @@ describe('BazaarOriginalDocumentProvider', () => {
     const content = await provider.provideTextDocumentContent(uriWithQuery('%7Bbad-json'));
 
     expect(content).toBe('');
-    expect(catBasis).not.toHaveBeenCalled();
+    expect(catBasisBytes).not.toHaveBeenCalled();
     expect(appendLine).toHaveBeenCalledWith(expect.stringContaining('不正な Bazaar 元ドキュメント URI を無視します'));
   });
 
@@ -49,7 +56,7 @@ describe('BazaarOriginalDocumentProvider', () => {
       expect(content).toBe('');
     }
 
-    expect(catBasis).not.toHaveBeenCalled();
+    expect(catBasisBytes).not.toHaveBeenCalled();
   });
 
   it('passes valid relative paths, including option-like names, to Bazaar safely', async () => {
@@ -57,7 +64,18 @@ describe('BazaarOriginalDocumentProvider', () => {
       path: '--help'
     }))))).resolves.toBe('basis content');
 
-    expect(catBasis).toHaveBeenCalledWith('--help');
+    expect(catBasisBytes).toHaveBeenCalledWith('--help');
+  });
+
+  it('decodes raw Bazaar basis bytes as repository file content', async () => {
+    catBasisBytes.mockResolvedValue(Buffer.from([0xef, 0xbb, 0xbf, 0xe6, 0x97, 0xa5, 0xe6, 0x9c, 0xac, 0x0a]));
+
+    const content = await provider.provideTextDocumentContent(uriWithQuery(encodeURIComponent(JSON.stringify({
+      path: 'README.md'
+    }))));
+
+    expect(content).toBe('日本\n');
+    expect(catBasisBytes).toHaveBeenCalledWith('README.md');
   });
 });
 

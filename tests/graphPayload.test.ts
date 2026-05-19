@@ -21,13 +21,19 @@ const revision: BazaarRevision = {
 
 describe('createGraphPayload', () => {
   it('includes display timestamps and load-more state', () => {
-    const payload = createGraphPayload(graph, [revision], 1);
+    const payload = createGraphPayload(graph, [revision], {
+      limit: 1,
+      loading: true
+    });
 
     expect(payload.canLoadMore).toBe(true);
+    expect(payload.loading).toBe(true);
     expect(payload.revisions[0]).toMatchObject({
       graphId: 'rev-1',
       timestamp: 'Fri 2026-05-15 00:03:46 +0900',
       displayTimestamp: '26/05/15 00:03'
     });
+    expect(payload.graphHtml).toContain('class="graph-node"');
+    expect(payload.graphHtml).toContain('26/05/15 00:03');
   });
 });

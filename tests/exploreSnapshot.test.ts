@@ -5,6 +5,7 @@ import {
   extendBazaarExploreHistory,
   type BazaarExploreSnapshot
 } from '../src/views/exploreSnapshot';
+import { createGraphPayload } from '../src/views/graphPayload';
 
 describe('createBazaarExploreModel', () => {
   it('summarizes status, conflicts, current branch, and revision graph targets', () => {
@@ -77,8 +78,13 @@ describe('createBazaarExploreModel', () => {
     expect(model.revisions[0]).toMatchObject({
       graphId: 'rev-2',
       summary: 'second line',
+      displayTimestamp: 'today',
       changedPaths: ['src/app.ts']
     });
+    expect(model.graphHtml).toBe(createGraphPayload(snapshot.graph, snapshot.revisions, {
+      limit: snapshot.revisions.length,
+      loading: false
+    }).graphHtml);
     expect(model.infoItems.map((item) => item.label)).toEqual([
       'Branch root',
       'Parent branch'

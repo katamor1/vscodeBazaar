@@ -36,15 +36,16 @@ export class BazaarGraphView implements vscode.WebviewViewProvider, vscode.Dispo
     const includeMerged = config.get<boolean>('history.includeMerged', true);
     this.currentLimit = Math.max(1, limit ?? (this.currentLimit || configuredLimit));
     this.loading = true;
+    await this.postGraphData();
     try {
       this.revisions = await this.revisionCache.get({
         limit: this.currentLimit,
         includeMerged
       });
       this.graph = buildGraph(this.revisions);
-      await this.postGraphData();
     } finally {
       this.loading = false;
+      await this.postGraphData();
     }
   }
 
@@ -115,7 +116,10 @@ export class BazaarGraphView implements vscode.WebviewViewProvider, vscode.Dispo
   }
 
   private async postGraphData(): Promise<void> {
-    const payload = createGraphPayload(this.graph, this.revisions, this.currentLimit);
+    const payload = createGraphPayload(this.graph, this.revisions, {
+      limit: this.currentLimit,
+      loading: this.loading
+    });
     await Promise.all([
       this.view?.webview.postMessage({ command: 'setGraph', payload }),
       this.panel?.webview.postMessage({ command: 'setGraph', payload })
@@ -143,18 +147,18 @@ function renderGraphShellHtml(): string {
     .file { text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
     svg { display: block; min-width: 100%; }
     text { font-size: 12px; dominant-baseline: middle; }
-    .edge { stroke: var(--vscode-descriptionForeground); stroke-width: 1.4; fill: none; }
-    .node { cursor: pointer; }
-    .node circle { fill: var(--vscode-charts-blue); }
-    .node.selected circle { fill: var(--vscode-charts-orange); }
-    .label { fill: var(--vscode-foreground); }
-    .label-meta { fill: var(--vscode-descriptionForeground); }
+    .graph-edge { stroke: var(--vscode-descriptionForeground); stroke-width: 1.4; fill: none; }
+    .graph-node { cursor: pointer; }
+    .graph-node circle { fill: var(--vscode-charts-blue); }
+    .graph-node.selected circle { fill: var(--vscode-charts-orange); }
+    .graph-label { fill: var(--vscode-foreground); }
+    .graph-label-meta { fill: var(--vscode-descriptionForeground); }
+    .load-more-sentinel { padding: 10px; color: var(--vscode-descriptionForeground); text-align: center; }
   </style>
 </head>
 <body>
   <div class="toolbar">
     <button id="refresh">更新</button>
-    <button id="load-more" class="secondary">さらに読み込む</button>
     <button id="diff">選択リビジョンの差分</button>
   </div>
   <div class="layout">
@@ -168,11 +172,11 @@ function renderGraphShellHtml(): string {
     let selected;
     let canLoadMore = false;
     let loadingMore = false;
+    let loadMoreObserver;
+    const graphElement = document.getElementById('graph');
 
     document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ command: 'refresh' }));
-    document.getElementById('load-more').addEventListener('click', () => requestLoadMore());
     document.getElementById('diff').addEventListener('click', () => selected && vscode.postMessage({ command: 'showDiff', revisionId: selected }));
-    document.getElementById('graph').addEventListener('scroll', () => maybeAutoLoadMore(document.getElementById('graph')));
 
     window.addEventListener('message', (event) => {
       if (event.data?.command !== 'setGraph') {
@@ -184,54 +188,22 @@ function renderGraphShellHtml(): string {
     function renderGraph(payload) {
       revisions = payload.revisions || [];
       canLoadMore = Boolean(payload.canLoadMore);
-      loadingMore = false;
+      loadingMore = Boolean(payload.loading);
       byId = new Map(revisions.map((revision) => [revision.graphId, revision]));
       const graph = payload.graph || { nodes: [], edges: [] };
-      document.getElementById('load-more').style.display = canLoadMore ? '' : 'none';
 
       if (!graph.nodes.length) {
-        document.getElementById('graph').textContent = '履歴グラフを表示するリビジョンがありません。';
+        graphElement.textContent = payload.loading ? '履歴グラフを読み込み中...' : '履歴グラフを表示するリビジョンがありません。';
         document.getElementById('detail').textContent = 'リビジョンを選択してください';
         return;
       }
 
-      const rowHeight = 42;
-      const columnWidth = 42;
-      const graphLaneWidth = 190;
-      const labelLaneX = graphLaneWidth + 24;
-      const radius = 7;
-      const width = Math.max(720, labelLaneX + 520);
-      const height = Math.max(160, graph.nodes.length * rowHeight + 40);
-      const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
-      const edgeSvg = graph.edges.map((edge) => {
-        const from = nodeById.get(edge.from);
-        const to = nodeById.get(edge.to);
-        if (!from || !to) {
-          return '';
-        }
-        const x1 = 24 + from.x * columnWidth;
-        const y1 = 24 + from.y * rowHeight;
-        const x2 = 24 + to.x * columnWidth;
-        const y2 = 24 + to.y * rowHeight;
-        const midY = y1 + Math.max(10, Math.abs(y2 - y1) / 2);
-        return '<path class="edge" d="M ' + x1 + ' ' + y1 + ' C ' + x1 + ' ' + midY + ', ' + x2 + ' ' + midY + ', ' + x2 + ' ' + y2 + '" />';
-      }).join('');
-      const nodeSvg = graph.nodes.map((node) => {
-        const x = 24 + node.x * columnWidth;
-        const y = 24 + node.y * rowHeight;
-        const revision = byId.get(node.id);
-        const meta = revision ? [revision.displayTimestamp, revision.committer, revision.branchNick, revision.tags.map((tag) => '#' + tag).join(' ')].filter(Boolean).join(' / ') : '';
-        return '<g class="node" data-id="' + escapeHtml(node.id) + '">' +
-          '<circle cx="' + x + '" cy="' + y + '" r="' + radius + '" />' +
-          '<text class="label" x="' + labelLaneX + '" y="' + (y - 5) + '">' + escapeHtml(node.label) + '</text>' +
-          '<text class="label-meta" x="' + labelLaneX + '" y="' + (y + 11) + '">' + escapeHtml(meta) + '</text>' +
-        '</g>';
-      }).join('');
-      document.getElementById('graph').innerHTML = '<svg viewBox="0 0 ' + width + ' ' + height + '" width="' + width + '" height="' + height + '" role="img" aria-label="Bazaar リビジョングラフ">' + edgeSvg + nodeSvg + '</svg>';
-      document.querySelectorAll('.node').forEach((node) => {
+      graphElement.innerHTML = String(payload.graphHtml || '') + renderLoadMoreSentinel();
+      observeLoadMoreSentinel(graphElement);
+      document.querySelectorAll('.graph-node').forEach((node) => {
         node.addEventListener('click', () => {
-          selected = node.dataset.id;
-          document.querySelectorAll('.node').forEach((item) => item.classList.toggle('selected', item === node));
+          selected = node.dataset.revisionId;
+          document.querySelectorAll('.graph-node').forEach((item) => item.classList.toggle('selected', item === node));
           renderDetail(byId.get(selected));
           vscode.postMessage({ command: 'showCommit', revisionId: selected });
         });
@@ -266,13 +238,34 @@ function renderGraphShellHtml(): string {
       return (value || '').split(/\\r?\\n/)[0] || '(メッセージなし)';
     }
 
-    function maybeAutoLoadMore(element) {
-      if (!element || !canLoadMore || loadingMore || element.scrollHeight <= 0) {
+    function renderLoadMoreSentinel() {
+      if (!canLoadMore && !loadingMore) {
+        return '';
+      }
+      return '<div id="load-more-sentinel" class="load-more-sentinel" aria-busy="' + String(loadingMore) + '">' +
+        (loadingMore ? '続きを読み込み中...' : '続きを表示') +
+        '</div>';
+    }
+
+    function observeLoadMoreSentinel(root) {
+      if (loadMoreObserver) {
+        loadMoreObserver.disconnect();
+        loadMoreObserver = undefined;
+      }
+      const sentinel = document.getElementById('load-more-sentinel');
+      if (!sentinel || !canLoadMore || loadingMore) {
         return;
       }
-      if ((element.scrollTop + element.clientHeight) / element.scrollHeight >= 0.95) {
-        requestLoadMore();
+      if (!('IntersectionObserver' in window)) {
+        sentinel.addEventListener('click', () => requestLoadMore());
+        return;
       }
+      loadMoreObserver = new IntersectionObserver((entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          requestLoadMore();
+        }
+      }, { root });
+      loadMoreObserver.observe(sentinel);
     }
 
     function requestLoadMore() {
@@ -280,6 +273,11 @@ function renderGraphShellHtml(): string {
         return;
       }
       loadingMore = true;
+      const sentinel = document.getElementById('load-more-sentinel');
+      if (sentinel) {
+        sentinel.textContent = '続きを読み込み中...';
+        sentinel.setAttribute('aria-busy', 'true');
+      }
       vscode.postMessage({ command: 'loadMore' });
     }
 

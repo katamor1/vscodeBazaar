@@ -153,6 +153,10 @@ export class BazaarBranchView implements vscode.TreeDataProvider<BazaarBranch>, 
     }
 
     const action = await resolveBranchSwitchAction(this.rootPath, target, force);
+    if (action.kind === 'alreadyCurrent') {
+      vscode.window.showInformationMessage('指定された Bazaar ブランチはすでに現在の作業ツリーです。');
+      return;
+    }
     if (action.kind === 'openWorktree') {
       await this.openWorktreeBranch(action.targetPath);
       return;

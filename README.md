@@ -11,7 +11,7 @@ Bazaar の作業ツリーを VS Code のソース管理ビューから扱うた�
 - ソース管理ビュー配下に `BAZAAR EXPLORE`、履歴、ブランチ、タグ、シェルブ、グラフの各ビューを追加します。
 - `BAZAAR EXPLORE` は、状態、競合、直近履歴グラフ、ブランチ、シェルブ、タグ、Bazaar info を 1 つの GUI で視覚確認できます。
 - 大きな Bazaar ツリーでも起動時は SCM 状態を先に読み込み、履歴、ブランチ、タグ、シェルブ、グラフはビュー表示時や明示更新時に読み込みます。
-- ファイル履歴、履歴検索、コミット詳細、変更パス、リビジョン ID のコピー、指定リビジョンのファイル表示に対応します。
+- ファイル履歴、履歴検索、履歴フィルターのクリア、コミット詳細、変更パス、リビジョン ID のコピー、指定リビジョンのファイル表示に対応します。
 - カーソル行または選択範囲の blame 注釈を表示し、ホバーで詳細を確認できます。
 - GitLens 風の blame コンテキスト操作として、前リビジョン、作業中ファイル、任意リビジョン、ブランチ、タグとの差分を開けます。
 - シェルブのプレビュー、適用、保持したまま適用、削除に対応します。
@@ -84,7 +84,7 @@ Bazaar CLI をインストールし、`bzr` として実行できるようにし
 - `bazaar.blame.enabledFormat`: カーソル行または選択範囲の行末 blame 装飾形式。
 - `bazaar.dangerousOperations.requireTypedConfirmation`: 破壊的操作の前に、確認フレーズの正確な入力を要求するか。
 
-履歴、`BAZAAR EXPLORE`、グラフはサイドバーからエディター領域へ拡大表示できます。Webview 表示ではスクロールが末尾 5% 付近に到達すると追加履歴を自動読み込みします。グラフと拡大履歴の日時は分単位の `yy/MM/dd HH:mm` 形式で表示します。
+履歴、`BAZAAR EXPLORE`、グラフはサイドバーからエディター領域へ拡大表示できます。Webview 表示では末尾の「続きを表示」プレースホルダーが表示されると追加履歴を自動読み込みします。履歴フィルターのクリアは検索語とファイル履歴フィルターの両方を消します。グラフと拡大履歴の日時は分単位の `yy/MM/dd HH:mm` 形式で表示します。
 
 ## 安全性と劣化動作
 
@@ -92,6 +92,7 @@ Bazaar CLI をインストールし、`bzr` として実行できるようにし
 - `.bzr` がないフォルダー、拡張機能を無効化したワークスペース、Bazaar 作業ツリーを検出できない状態では、専用ビューや操作メニューを非表示にします。
 - Bazaar コマンドの通常トレースは既定で要約のみを出力し、巨大な stdout/stderr 本文は Output Channel に直接流しません。必要な場合は `Bazaar: 直近コマンドの完全出力を開く` か `bazaar.trace.mode` を使います。
 - 履歴上のファイル内容は読み取り専用の仮想ドキュメントとして開きます。
+- 履歴差分の Bazaar 側仮想ドキュメントは UTF-8 BOM、UTF-8、EUC-JP、Shift_JIS を判定し、VS Code の `files.encoding` も優先します。作業ツリー側は通常の `file` URI のままなので、差分エディター右側の編集性は維持します。
 - `clean-tree`、`uncommit`、`break-lock`、全変更の revert、全競合の解決、シェルブ削除などの危険な操作は確認ダイアログを使い、設定が有効なら確認フレーズの入力も要求します。
 - Bazaar ツリーがない場合や Bazaar メタデータが壊れている場合は、修復を試みず、利用不可メッセージ、無効化された操作、出力チャンネルの診断へ安全に劣化します。
 
@@ -126,7 +127,7 @@ npm run package
 - `Bazaar: Pull` でブランチ分岐が報告された場合、Bazaar は Git のような自動マージを行いません。この拡張は `親ブランチをマージ`、`未取得/未反映を表示`、`出力を開く` を提示します。`親ブランチをマージ` を選ぶと `bzr merge` を実行するので、必要に応じて競合を解決してからマージコミットしてください。
 - マージ中のファイル変更を revert しても Bazaar が pending merge と認識し続ける場合は、`Bazaar: Pending Merge 状態をクリア` を実行してください。これは `bzr revert --forget-merges` を実行し、ファイル内容を変更せず pending merge の親情報を消します。ファイル変更と pending merge 状態の両方を中止したい場合は `Bazaar: すべての変更と Merge 状態を Revert` を使います。
 - Bazaar の内部再帰エラーにより履歴やグラフを読み込めない場合、コマンド操作は無効化されるか、不正なリビジョンを `bzr` に渡す前に短い警告で止まります。
-- 履歴ファイルの差分が空で開く場合は、その仮想ドキュメントで捕捉された `bzr cat -r` エラーを出力チャンネルで確認してください。
+- 履歴ファイルの差分が空で開く場合は、その仮想ドキュメントで捕捉された `bzr cat -r` エラーを出力チャンネルで確認してください。文字化けする場合は VS Code の `files.encoding` を対象ファイルの文字コードに合わせてください。
 
 ## 検証
 
@@ -140,7 +141,7 @@ npm audit --omit=dev
 npm run package
 ```
 
-`npm run package` は `prepackage` により `npm run compile`、`npm test`、`npm run test:integration`、`npm audit --omit=dev` を先に実行します。このローカル VSIX リリースラインでは、`npm run package` により `vscode-bazaar-0.2.11.vsix` が生成されます。
+`npm run package` は `prepackage` により `npm run compile`、`npm test`、`npm run test:integration`、`npm audit --omit=dev` を先に実行します。このローカル VSIX リリースラインでは、`npm run package` により `vscode-bazaar-0.2.12.vsix` が生成されます。
 
 ## 補足
 

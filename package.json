@@ -2,7 +2,7 @@
   "name": "vscode-bazaar",
   "displayName": "Bazaar SCM",
   "description": "Visual Studio Code で Bazaar の状態、履歴、グラフ、blame、ブランチ、タグ、シェルブ、競合、差分を扱う SCM 拡張です。",
-  "version": "0.2.11",
+  "version": "0.2.12",
   "publisher": "local",
   "license": "UNLICENSED",
   "engines": {
@@ -342,7 +342,7 @@
       },
       {
         "command": "bazaar.history.clearFileFilter",
-        "title": "Bazaar: ファイル履歴フィルターをクリア",
+        "title": "Bazaar: 履歴フィルターをクリア",
         "icon": "$(clear-all)"
       },
       {

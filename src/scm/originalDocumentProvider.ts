@@ -1,6 +1,7 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { BazaarClient } from '../bazaar/client';
+import { decodeRepositoryFileContent } from '../bazaar/outputEncoding';
 import {
   type OriginalDocumentQuery,
   decodeOriginalDocumentQuery,
@@ -49,7 +50,10 @@ export class BazaarOriginalDocumentProvider implements vscode.TextDocumentConten
     }
     const relativePath = query.path;
     try {
-      return await this.client.catBasis(relativePath);
+      return decodeRepositoryFileContent(
+        await this.client.catBasisBytes(relativePath),
+        { preferredEncoding: repositoryFileEncoding() }
+      );
     } catch (error) {
       this.output.appendLine(`${relativePath} の Bazaar basis を読み込めませんでした: ${formatError(error)}`);
       return '';
@@ -67,4 +71,8 @@ export class BazaarOriginalDocumentProvider implements vscode.TextDocumentConten
 
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function repositoryFileEncoding(): string | undefined {
+  return vscode.workspace.getConfiguration('files').get<string>('encoding');
 }

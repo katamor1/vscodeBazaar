@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import type { BazaarClient } from '../bazaar/client';
+import { decodeRepositoryFileContent } from '../bazaar/outputEncoding';
 import {
   type RevisionDocumentQuery,
   decodeRevisionDocumentQuery,
@@ -36,7 +37,10 @@ export class BazaarRevisionDocumentProvider implements vscode.TextDocumentConten
     }
 
     try {
-      return await this.client.catAtRevision(query.revision, query.path);
+      return decodeRepositoryFileContent(
+        await this.client.catAtRevisionBytes(query.revision, query.path),
+        { preferredEncoding: repositoryFileEncoding() }
+      );
     } catch (error) {
       this.output.appendLine(`${query.path} の Bazaar リビジョン ${query.revision} を読み込めませんでした: ${formatError(error)}`);
       return '';
@@ -63,4 +67,8 @@ export class BazaarRevisionDocumentProvider implements vscode.TextDocumentConten
 
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function repositoryFileEncoding(): string | undefined {
+  return vscode.workspace.getConfiguration('files').get<string>('encoding');
 }

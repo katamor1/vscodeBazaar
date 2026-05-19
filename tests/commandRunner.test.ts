@@ -209,6 +209,34 @@ describe('BazaarClient', () => {
     ]);
   });
 
+  it('returns raw stdout bytes for Bazaar cat and diff commands when available', async () => {
+    const bytes = Buffer.from([0xc6, 0xfc, 0xcb, 0xdc]);
+    const calls: string[][] = [];
+    const client = new BazaarClient({
+      cwd: 'C:/repo',
+      cliPath: 'bzr',
+      run: async (args) => {
+        calls.push([...args]);
+        return {
+          stdout: 'decoded',
+          stderr: '',
+          exitCode: 0,
+          stdoutBytes: bytes
+        };
+      }
+    });
+
+    await expect(client.catAtRevisionBytes('7', 'README.md')).resolves.toBe(bytes);
+    await expect(client.catBasisBytes('README.md')).resolves.toBe(bytes);
+    await expect(client.diffChangeBytes('7')).resolves.toBe(bytes);
+
+    expect(calls).toEqual([
+      ['cat', '-r', '7', '--', 'README.md'],
+      ['cat', '-r', '-1', '--', 'README.md'],
+      ['diff', '-c', '7']
+    ]);
+  });
+
   it('terminates Bazaar options before passing working-tree paths', async () => {
     const calls: string[][] = [];
     const client = new BazaarClient({

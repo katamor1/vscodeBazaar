@@ -409,14 +409,25 @@ function renderExploreHtml(model: BazaarExploreModel, loadMore: { canLoadMore: b
       font-size: 11px;
       dominant-baseline: middle;
     }
-    .node {
+    .graph-edge {
+      stroke: var(--vscode-descriptionForeground);
+      stroke-width: 1.4;
+      fill: none;
+    }
+    .graph-node {
       cursor: pointer;
     }
-    .node circle {
+    .graph-node circle {
       fill: var(--vscode-charts-blue);
     }
-    .node.selected circle {
+    .graph-node.selected circle {
       fill: var(--vscode-charts-orange);
+    }
+    .graph-label {
+      fill: var(--vscode-foreground);
+    }
+    .graph-label-meta {
+      fill: var(--vscode-descriptionForeground);
     }
     .revision-actions,
     .file-actions {
@@ -448,6 +459,13 @@ function renderExploreHtml(model: BazaarExploreModel, loadMore: { canLoadMore: b
       border-left: 3px solid var(--vscode-charts-orange);
       padding-left: 8px;
     }
+    .load-more-sentinel {
+      margin-top: 8px;
+      padding: 10px;
+      color: var(--vscode-descriptionForeground);
+      text-align: center;
+      border-top: 1px solid var(--vscode-panel-border);
+    }
   </style>
 </head>
 <body>
@@ -457,7 +475,6 @@ function renderExploreHtml(model: BazaarExploreModel, loadMore: { canLoadMore: b
       <div class="root" title="${escapeHtml(model.rootPath)}">${escapeHtml(model.rootPath)}</div>
     </div>
     <div class="actions">
-      <button class="action secondary" id="load-more" title="さらに読み込む" aria-label="さらに読み込む">追加</button>
       <button class="action" id="refresh" title="更新" aria-label="更新">更新</button>
       <button class="action secondary" id="output" title="出力" aria-label="出力">出力</button>
     </div>
@@ -471,8 +488,9 @@ function renderExploreHtml(model: BazaarExploreModel, loadMore: { canLoadMore: b
     </section>
     <section class="section">
       <h2>Graph</h2>
-      ${renderGraph(model)}
+      ${renderGraphHtml(model)}
       <div id="revision-detail" class="revision-detail"></div>
+      ${renderLoadMoreSentinel(loadMore)}
     </section>
     <section class="section">
       <h2>Branches</h2>
@@ -493,17 +511,16 @@ function renderExploreHtml(model: BazaarExploreModel, loadMore: { canLoadMore: b
     let loadState = ${loadMoreJson};
     const revisions = new Map(model.revisions.map((revision) => [revision.graphId, revision]));
     let selectedRevisionId = model.revisions[0]?.graphId;
+    let loadMoreObserver;
 
     document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ command: 'refresh' }));
     document.getElementById('output').addEventListener('click', () => vscode.postMessage({ command: 'openOutput' }));
-    document.getElementById('load-more').style.display = loadState.canLoadMore ? '' : 'none';
-    document.getElementById('load-more').addEventListener('click', () => requestLoadMore());
-    window.addEventListener('scroll', () => maybeAutoLoadMore());
+    observeLoadMoreSentinel();
 
-    document.querySelectorAll('[data-revision-id]').forEach((element) => {
+    document.querySelectorAll('.graph-node').forEach((element) => {
       element.addEventListener('click', () => {
         selectedRevisionId = element.dataset.revisionId;
-        document.querySelectorAll('[data-revision-id]').forEach((item) => {
+        document.querySelectorAll('.graph-node').forEach((item) => {
           item.classList.toggle('selected', item.dataset.revisionId === selectedRevisionId);
         });
         renderRevisionDetail(revisions.get(selectedRevisionId));
@@ -530,7 +547,7 @@ function renderExploreHtml(model: BazaarExploreModel, loadMore: { canLoadMore: b
       container.innerHTML =
         '<div class="row">' +
           '<div class="primary">' + escapeHtml(revision.revno + ' ' + revision.summary) + '</div>' +
-          '<div class="secondary">' + escapeHtml(revision.committer) + ' / ' + escapeHtml(revision.timestamp) + '</div>' +
+          '<div class="secondary">' + escapeHtml(revision.committer) + ' / ' + escapeHtml(revision.displayTimestamp || revision.timestamp) + '</div>' +
           '<div class="secondary">' + escapeHtml(revision.branchNick || '') + ' ' + tags + '</div>' +
           '<div class="secondary">parents<br>' + parents + '</div>' +
         '</div>' +
@@ -558,14 +575,25 @@ function renderExploreHtml(model: BazaarExploreModel, loadMore: { canLoadMore: b
       return String(value).replace(/"/g, '\\\\"');
     }
 
-    function maybeAutoLoadMore() {
-      const element = document.scrollingElement || document.documentElement;
-      if (!element || !loadState.canLoadMore || loadState.loading || element.scrollHeight <= 0) {
+    function observeLoadMoreSentinel() {
+      if (loadMoreObserver) {
+        loadMoreObserver.disconnect();
+        loadMoreObserver = undefined;
+      }
+      const sentinel = document.getElementById('load-more-sentinel');
+      if (!sentinel || !loadState.canLoadMore || loadState.loading) {
         return;
       }
-      if ((element.scrollTop + element.clientHeight) / element.scrollHeight >= 0.95) {
-        requestLoadMore();
+      if (!('IntersectionObserver' in window)) {
+        sentinel.addEventListener('click', () => requestLoadMore());
+        return;
       }
+      loadMoreObserver = new IntersectionObserver((entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          requestLoadMore();
+        }
+      });
+      loadMoreObserver.observe(sentinel);
     }
 
     function requestLoadMore() {
@@ -573,6 +601,11 @@ function renderExploreHtml(model: BazaarExploreModel, loadMore: { canLoadMore: b
         return;
       }
       loadState.loading = true;
+      const sentinel = document.getElementById('load-more-sentinel');
+      if (sentinel) {
+        sentinel.textContent = '続きを読み込み中...';
+        sentinel.setAttribute('aria-busy', 'true');
+      }
       vscode.postMessage({ command: 'loadMore' });
     }
 
@@ -629,41 +662,18 @@ function renderStatus(model: BazaarExploreModel): string {
   </div>`).join('');
 }
 
-function renderGraph(model: BazaarExploreModel): string {
-  if (model.graph.nodes.length === 0) {
+function renderGraphHtml(model: BazaarExploreModel): string {
+  if (!model.graphHtml) {
     return '<div class="empty">履歴グラフを表示するリビジョンがありません。</div>';
   }
+  return `<div class="graph-wrap">${model.graphHtml}</div>`;
+}
 
-  const rowHeight = 34;
-  const columnWidth = 46;
-  const radius = 5;
-  const width = Math.max(300, 180 + Math.max(0, ...model.graph.nodes.map((node) => node.x)) * columnWidth);
-  const height = Math.max(120, model.graph.nodes.length * rowHeight + 28);
-  const nodeById = new Map(model.graph.nodes.map((node) => [node.id, node]));
-  const edgeSvg = model.graph.edges.map((edge) => {
-    const from = nodeById.get(edge.from);
-    const to = nodeById.get(edge.to);
-    if (!from || !to) {
-      return '';
-    }
-    const x1 = 18 + from.x * columnWidth;
-    const y1 = 18 + from.y * rowHeight;
-    const x2 = 18 + to.x * columnWidth;
-    const y2 = 18 + to.y * rowHeight;
-    const midY = y1 + Math.max(8, Math.abs(y2 - y1) / 2);
-    return `<path d="M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}" fill="none" stroke="var(--vscode-descriptionForeground)" stroke-width="1.2" />`;
-  }).join('');
-  const nodeSvg = model.graph.nodes.map((node) => {
-    const x = 18 + node.x * columnWidth;
-    const y = 18 + node.y * rowHeight;
-    const labelX = x + 14;
-    return `<g class="node" data-revision-id="${escapeHtml(node.id)}">
-      <circle cx="${x}" cy="${y}" r="${radius}" />
-      <text x="${labelX}" y="${y}" fill="var(--vscode-foreground)">${escapeHtml(firstLine(node.label))}</text>
-    </g>`;
-  }).join('');
-
-  return `<div class="graph-wrap"><svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="Bazaar リビジョングラフ">${edgeSvg}${nodeSvg}</svg></div>`;
+function renderLoadMoreSentinel(loadMore: { canLoadMore: boolean; loading: boolean }): string {
+  if (!loadMore.canLoadMore && !loadMore.loading) {
+    return '';
+  }
+  return `<div id="load-more-sentinel" class="load-more-sentinel" aria-busy="${loadMore.loading ? 'true' : 'false'}">${loadMore.loading ? '続きを読み込み中...' : '続きを表示'}</div>`;
 }
 
 function renderBranches(model: BazaarExploreModel): string {
@@ -692,10 +702,6 @@ function renderInfo(model: BazaarExploreModel): string {
   }
   return `${model.infoItems.map((item) => `<div class="row"><div class="primary">${escapeHtml(item.label)}</div><div class="secondary" title="${escapeHtml(item.value)}">${escapeHtml(item.value)}</div></div>`).join('')}
     <div class="row"><div class="primary">Loaded at</div><div class="secondary">${escapeHtml(model.loadedAt)}</div></div>`;
-}
-
-function firstLine(value: string): string {
-  return value.split(/\r?\n/)[0]?.trim() || '(メッセージなし)';
 }
 
 function escapeHtml(value: string): string {

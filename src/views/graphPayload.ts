@@ -1,6 +1,7 @@
 import { revisionGraphId } from '../bazaar/revisionSpec';
 import type { BazaarRevision, RevisionGraph } from '../bazaar/types';
 import { formatRevisionTimestamp } from './revisionTime';
+import { renderRevisionGraphSvg } from './revisionGraphRenderer';
 
 export interface GraphPayloadRevision {
   graphId: string;
@@ -20,29 +21,39 @@ export interface GraphPayload {
   revisions: GraphPayloadRevision[];
   limit: number;
   canLoadMore: boolean;
+  loading: boolean;
+  graphHtml: string;
 }
 
-export function createGraphPayload(graph: RevisionGraph, revisions: BazaarRevision[], limit: number): GraphPayload {
+export interface GraphPayloadOptions {
+  limit: number;
+  loading: boolean;
+}
+
+export function createGraphPayload(graph: RevisionGraph, revisions: BazaarRevision[], options: GraphPayloadOptions): GraphPayload {
+  const renderedRevisions = revisions.flatMap((revision) => {
+    const graphId = revisionGraphId(revision);
+    return graphId
+      ? [{
+          graphId,
+          revno: revision.revno,
+          committer: revision.committer,
+          timestamp: revision.timestamp,
+          displayTimestamp: formatRevisionTimestamp(revision.timestamp),
+          branchNick: revision.branchNick,
+          tags: revision.tags,
+          parents: revision.parentIds,
+          message: revision.message,
+          changedPaths: revision.changedPaths ?? []
+        }]
+      : [];
+  });
   return {
     graph,
-    revisions: revisions.flatMap((revision) => {
-      const graphId = revisionGraphId(revision);
-      return graphId
-        ? [{
-            graphId,
-            revno: revision.revno,
-            committer: revision.committer,
-            timestamp: revision.timestamp,
-            displayTimestamp: formatRevisionTimestamp(revision.timestamp),
-            branchNick: revision.branchNick,
-            tags: revision.tags,
-            parents: revision.parentIds,
-            message: revision.message,
-            changedPaths: revision.changedPaths ?? []
-          }]
-        : [];
-    }),
-    limit,
-    canLoadMore: revisions.length >= limit
+    revisions: renderedRevisions,
+    limit: options.limit,
+    canLoadMore: revisions.length >= options.limit,
+    loading: options.loading,
+    graphHtml: renderRevisionGraphSvg(graph, renderedRevisions)
   };
 }

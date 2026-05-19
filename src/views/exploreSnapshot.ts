@@ -11,6 +11,8 @@ import type {
   RevisionGraph
 } from '../bazaar/types';
 import { buildGraph } from '../bazaar/graphModel';
+import { renderRevisionGraphSvg } from './revisionGraphRenderer';
+import { formatRevisionTimestamp } from './revisionTime';
 
 export type BazaarExploreHealth = 'clean' | 'dirty' | 'conflict' | 'partial';
 export type BazaarExploreStatusGroupId = BazaarChangeKind | 'conflict';
@@ -64,6 +66,7 @@ export interface BazaarExploreRevisionItem {
   committer: string;
   branchNick: string;
   timestamp: string;
+  displayTimestamp: string;
   message: string;
   summary: string;
   tags: readonly string[];
@@ -89,6 +92,7 @@ export interface BazaarExploreModel {
   shelves: readonly BazaarShelf[];
   revisions: readonly BazaarExploreRevisionItem[];
   graph: RevisionGraph;
+  graphHtml: string;
   infoItems: readonly BazaarExploreInfoItem[];
   errors: readonly BazaarExploreLoadError[];
 }
@@ -131,6 +135,25 @@ export function createEmptyBazaarExploreSnapshot(rootPath: string): BazaarExplor
 
 export function createBazaarExploreModel(snapshot: BazaarExploreSnapshot): BazaarExploreModel {
   const counts = createCounts(snapshot);
+  const revisions = snapshot.revisions.flatMap((revision) => {
+    const graphId = revisionGraphId(revision);
+    return graphId
+      ? [{
+          graphId,
+          revno: revision.revno,
+          revisionId: revision.revisionId,
+          committer: revision.committer,
+          branchNick: revision.branchNick,
+          timestamp: revision.timestamp,
+          displayTimestamp: formatRevisionTimestamp(revision.timestamp),
+          message: revision.message,
+          summary: firstLine(revision.message),
+          tags: revision.tags,
+          parentIds: revision.parentIds,
+          changedPaths: revision.changedPaths ?? []
+        }]
+      : [];
+  });
   return {
     rootPath: snapshot.rootPath,
     loadedAt: snapshot.loadedAt,
@@ -142,25 +165,9 @@ export function createBazaarExploreModel(snapshot: BazaarExploreSnapshot): Bazaa
     branches: snapshot.branches,
     tags: snapshot.tags,
     shelves: snapshot.shelves,
-    revisions: snapshot.revisions.flatMap((revision) => {
-      const graphId = revisionGraphId(revision);
-      return graphId
-        ? [{
-            graphId,
-            revno: revision.revno,
-            revisionId: revision.revisionId,
-            committer: revision.committer,
-            branchNick: revision.branchNick,
-            timestamp: revision.timestamp,
-            message: revision.message,
-            summary: firstLine(revision.message),
-            tags: revision.tags,
-            parentIds: revision.parentIds,
-            changedPaths: revision.changedPaths ?? []
-          }]
-        : [];
-    }),
+    revisions,
     graph: snapshot.graph,
+    graphHtml: renderRevisionGraphSvg(snapshot.graph, revisions),
     infoItems: createInfoItems(snapshot.info),
     errors: snapshot.errors
   };

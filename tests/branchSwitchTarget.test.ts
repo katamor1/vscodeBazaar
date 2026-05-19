@@ -24,7 +24,7 @@ describe('resolveBranchSwitchAction', () => {
     });
   });
 
-  it('keeps bzr switch when the target is the current root', async () => {
+  it('does not run bzr switch when the target is the current root', async () => {
     const action = await resolveBranchSwitchAction(
       'C:/Repo/Trunk',
       'c:/repo/trunk',
@@ -33,9 +33,8 @@ describe('resolveBranchSwitchAction', () => {
     );
 
     expect(action).toEqual({
-      kind: 'bzrSwitch',
-      target: 'c:/repo/trunk',
-      force: true
+      kind: 'alreadyCurrent',
+      targetPath: 'C:/Repo/Trunk'
     });
   });
 

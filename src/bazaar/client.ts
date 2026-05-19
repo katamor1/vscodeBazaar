@@ -175,10 +175,21 @@ export class BazaarClient {
     return result.stdout;
   }
 
+  async catBasisBytes(path: string): Promise<Buffer> {
+    const result = await this.checked(['cat', '-r', '-1', ...pathArgs([path])]);
+    return stdoutBytes(result);
+  }
+
   async catAtRevision(revision: string, path: string): Promise<string> {
     const revisionSpec = requireRevisionSpec(revision);
     const result = await this.checked(['cat', '-r', revisionSpec, '--', path]);
     return result.stdout;
+  }
+
+  async catAtRevisionBytes(revision: string, path: string): Promise<Buffer> {
+    const revisionSpec = requireRevisionSpec(revision);
+    const result = await this.checked(['cat', '-r', revisionSpec, '--', path]);
+    return stdoutBytes(result);
   }
 
   async diff(path: string): Promise<string> {
@@ -193,6 +204,16 @@ export class BazaarClient {
     }
     const result = await this.checked(args, [0, 1]);
     return result.stdout || result.stderr;
+  }
+
+  async diffChangeBytes(revision: string, path?: string): Promise<Buffer> {
+    const args = ['diff', '-c', requireRevisionSpec(revision)];
+    if (path) {
+      args.push(...pathArgs([path]));
+    }
+    const result = await this.checked(args, [0, 1]);
+    const stdout = stdoutBytes(result);
+    return stdout.length > 0 ? stdout : stderrBytes(result);
   }
 
   async log(options: BazaarLogOptions = {}): Promise<BazaarRevision[]> {
@@ -628,18 +649,24 @@ function runProcess(cliPath: string, args: readonly string[], cwd: string, timeo
       }
       const stdout = decodeBazaarOutput(Buffer.concat(stdoutChunks));
       const stderr = decodeBazaarOutput(Buffer.concat(stderrChunks));
+      const stdoutBytes = Buffer.concat(stdoutChunks);
+      const stderrBytes = Buffer.concat(stderrChunks);
       if (killedForTimeout) {
         resolve({
           stdout,
           stderr: [stderr.trimEnd(), `Bazaar command timed out after ${timeoutMs}ms.`].filter(Boolean).join('\n'),
-          exitCode: 124
+          exitCode: 124,
+          stdoutBytes,
+          stderrBytes
         });
         return;
       }
       resolve({
         stdout,
         stderr,
-        exitCode: exitCode ?? 1
+        exitCode: exitCode ?? 1,
+        stdoutBytes,
+        stderrBytes
       });
     });
   });
@@ -662,4 +689,12 @@ function quoteCommandPart(value: string): string {
 function formatCommandError(args: readonly string[], result: CommandResult): string {
   const output = [result.stderr.trim(), result.stdout.trim()].filter(Boolean).join('\n');
   return output || `bzr ${args.join(' ')} failed with exit code ${result.exitCode}.`;
+}
+
+function stdoutBytes(result: CommandResult): Buffer {
+  return result.stdoutBytes ?? Buffer.from(result.stdout, 'utf8');
+}
+
+function stderrBytes(result: CommandResult): Buffer {
+  return result.stderrBytes ?? Buffer.from(result.stderr, 'utf8');
 }
