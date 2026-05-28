@@ -38,5 +38,9 @@ export function resolveGraphRevisionMessage(
 
   return message.command === 'showCommit'
     ? { command: 'showCommit', revision }
-    : { command: 'showDiff', revision, path: message.path };
+    : { command: 'showDiff', revision, path: changedPathForMessage(revision, message.path) };
+}
+
+function changedPathForMessage(revision: BazaarRevision, value: unknown): string | undefined {
+  return typeof value === 'string' && revision.changedPaths?.includes(value) ? value : undefined;
 }

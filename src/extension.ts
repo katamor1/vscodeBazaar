@@ -39,6 +39,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     output,
     generatedProvider,
     vscode.workspace.registerTextDocumentContentProvider(BazaarGeneratedDocumentProvider.scheme, generatedProvider),
+    vscode.workspace.onDidCloseTextDocument((document) => {
+      if (document.uri.scheme === BazaarGeneratedDocumentProvider.scheme) {
+        generatedProvider.deleteUri(document.uri);
+      }
+    }),
     controller
   );
 

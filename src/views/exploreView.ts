@@ -13,6 +13,7 @@ import {
   type BazaarExploreSnapshot
 } from './exploreSnapshot';
 import { BazaarRevisionCache } from './revisionCache';
+import { createWebviewNonce, webviewContentSecurityPolicy } from './webviewSecurity';
 
 type ExploreHost = vscode.WebviewView | vscode.WebviewPanel;
 
@@ -221,15 +222,26 @@ export class BazaarExploreView implements vscode.WebviewViewProvider, vscode.Dis
   }
 
   private render(): void {
-    const html = renderExploreHtml(createBazaarExploreModel(this.snapshot), {
+    const model = createBazaarExploreModel(this.snapshot);
+    const loadMore = {
       canLoadMore: this.snapshot.revisions.length >= (this.currentHistoryLimit || maxExploreRevisions),
       loading: this.historyLoading
-    });
+    };
     if (this.view) {
-      this.view.webview.html = html;
+      this.view.webview.html = renderExploreHtml(
+        model,
+        loadMore,
+        this.view.webview.cspSource,
+        createWebviewNonce()
+      );
     }
     if (this.panel) {
-      this.panel.webview.html = html;
+      this.panel.webview.html = renderExploreHtml(
+        model,
+        loadMore,
+        this.panel.webview.cspSource,
+        createWebviewNonce()
+      );
     }
   }
 
@@ -241,14 +253,20 @@ export class BazaarExploreView implements vscode.WebviewViewProvider, vscode.Dis
   }
 }
 
-function renderExploreHtml(model: BazaarExploreModel, loadMore: { canLoadMore: boolean; loading: boolean }): string {
+function renderExploreHtml(
+  model: BazaarExploreModel,
+  loadMore: { canLoadMore: boolean; loading: boolean },
+  cspSource: string,
+  nonce: string
+): string {
   const modelJson = JSON.stringify(model).replace(/</g, '\\u003c');
   const loadMoreJson = JSON.stringify(loadMore);
   return `<!doctype html>
 <html>
 <head>
   <meta charset="UTF-8">
-  <style>
+  <meta http-equiv="Content-Security-Policy" content="${webviewContentSecurityPolicy(cspSource, nonce)}">
+  <style nonce="${nonce}">
     :root {
       color-scheme: var(--vscode-color-scheme);
     }
@@ -459,6 +477,9 @@ function renderExploreHtml(model: BazaarExploreModel, loadMore: { canLoadMore: b
       border-left: 3px solid var(--vscode-charts-orange);
       padding-left: 8px;
     }
+    .spacer {
+      height: 8px;
+    }
     .load-more-sentinel {
       margin-top: 8px;
       padding: 10px;
@@ -505,7 +526,7 @@ function renderExploreHtml(model: BazaarExploreModel, loadMore: { canLoadMore: b
       ${renderInfo(model)}
     </section>
   </main>
-  <script>
+  <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     const model = ${modelJson};
     let loadState = ${loadMoreJson};
@@ -693,7 +714,7 @@ function renderShelvesAndTags(model: BazaarExploreModel): string {
   const tags = model.tags.length
     ? model.tags.slice(0, 12).map((tag) => `<div class="row"><div class="primary">${escapeHtml(tag.name)}</div><div class="secondary">${escapeHtml(tag.revision)}</div></div>`).join('')
     : '<div class="empty">タグは読み込まれていません。</div>';
-  return `${shelves}<div style="height: 8px"></div>${tags}`;
+  return `${shelves}<div class="spacer"></div>${tags}`;
 }
 
 function renderInfo(model: BazaarExploreModel): string {

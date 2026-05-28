@@ -4,6 +4,7 @@ import type { BazaarRevision, RevisionGraph } from '../bazaar/types';
 import { createGraphPayload } from './graphPayload';
 import { resolveGraphRevisionMessage, type GraphMessage } from './graphMessage';
 import { BazaarRevisionCache } from './revisionCache';
+import { createWebviewNonce, webviewContentSecurityPolicy } from './webviewSecurity';
 
 type GraphHost = vscode.WebviewView | vscode.WebviewPanel;
 
@@ -89,8 +90,9 @@ export class BazaarGraphView implements vscode.WebviewViewProvider, vscode.Dispo
   }
 
   private configureHost(host: GraphHost): void {
+    const nonce = createWebviewNonce();
     host.webview.options = { enableScripts: true };
-    host.webview.html = renderGraphShellHtml();
+    host.webview.html = renderGraphShellHtml(host.webview.cspSource, nonce);
     host.webview.onDidReceiveMessage((message: GraphMessage | { command: 'loadMore' }) => {
       void this.handleMessage(message);
     });
@@ -127,12 +129,13 @@ export class BazaarGraphView implements vscode.WebviewViewProvider, vscode.Dispo
   }
 }
 
-function renderGraphShellHtml(): string {
+function renderGraphShellHtml(cspSource: string, nonce: string): string {
   return `<!doctype html>
 <html>
 <head>
   <meta charset="UTF-8">
-  <style>
+  <meta http-equiv="Content-Security-Policy" content="${webviewContentSecurityPolicy(cspSource, nonce)}">
+  <style nonce="${nonce}">
     html, body { height: 100%; }
     body { padding: 0; margin: 0; color: var(--vscode-foreground); font-family: var(--vscode-font-family); }
     .toolbar { display: flex; gap: 6px; padding: 8px; border-bottom: 1px solid var(--vscode-panel-border); }
@@ -165,7 +168,7 @@ function renderGraphShellHtml(): string {
     <div class="graph-wrap" id="graph">履歴グラフを読み込み中...</div>
     <aside class="detail" id="detail">リビジョンを選択してください</aside>
   </div>
-  <script>
+  <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     let revisions = [];
     let byId = new Map();

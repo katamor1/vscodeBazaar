@@ -19,6 +19,7 @@ import {
 import { BazaarRevisionCache } from './revisionCache';
 import { createHistoryEditorPayload, type HistoryEditorPayload } from './historyEditorModel';
 import { clearHistoryFilters } from './historyFilters';
+import { createWebviewNonce, webviewContentSecurityPolicy } from './webviewSecurity';
 
 type HistoryNode =
   | { type: 'revision'; revision: BazaarRevision }
@@ -364,8 +365,9 @@ export class BazaarHistoryView implements vscode.TreeDataProvider<HistoryNode>, 
   }
 
   private configureEditorPanel(panel: vscode.WebviewPanel): void {
+    const nonce = createWebviewNonce();
     panel.webview.options = { enableScripts: true };
-    panel.webview.html = renderHistoryEditorShellHtml();
+    panel.webview.html = renderHistoryEditorShellHtml(panel.webview.cspSource, nonce);
     panel.webview.onDidReceiveMessage((message: HistoryEditorMessage) => {
       void this.handleEditorMessage(message);
     });
@@ -455,12 +457,13 @@ export class BazaarHistoryView implements vscode.TreeDataProvider<HistoryNode>, 
   }
 }
 
-function renderHistoryEditorShellHtml(): string {
+function renderHistoryEditorShellHtml(cspSource: string, nonce: string): string {
   return `<!doctype html>
 <html>
 <head>
   <meta charset="UTF-8">
-  <style>
+  <meta http-equiv="Content-Security-Policy" content="${webviewContentSecurityPolicy(cspSource, nonce)}">
+  <style nonce="${nonce}">
     html, body { height: 100%; }
     body { margin: 0; color: var(--vscode-foreground); background: var(--vscode-editor-background); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); }
     button { font: inherit; cursor: pointer; }
@@ -477,6 +480,7 @@ function renderHistoryEditorShellHtml(): string {
     .revno { color: var(--vscode-charts-blue); font-weight: 600; }
     .summary, .meta, .date { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .meta, .date, .empty { color: var(--vscode-descriptionForeground); }
+    .empty.padded { padding: 12px; }
     h2 { margin: 0 0 8px; font-size: 14px; line-height: 20px; }
     .section { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--vscode-panel-border); }
     .files { display: flex; flex-direction: column; gap: 5px; }
@@ -496,7 +500,7 @@ function renderHistoryEditorShellHtml(): string {
     <main class="list" id="list">Bazaar 履歴を読み込み中...</main>
     <aside class="detail" id="detail">リビジョンを選択してください</aside>
   </div>
-  <script>
+  <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     let revisions = [];
     let byId = new Map();
@@ -527,7 +531,7 @@ function renderHistoryEditorShellHtml(): string {
         return;
       }
       if (revisions.length === 0) {
-        list.innerHTML = '<div class="empty" style="padding: 12px;">表示する履歴がありません。</div>';
+        list.innerHTML = '<div class="empty padded">表示する履歴がありません。</div>';
         document.getElementById('detail').textContent = 'リビジョンを選択してください';
         return;
       }

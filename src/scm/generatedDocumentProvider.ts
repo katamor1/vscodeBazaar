@@ -38,6 +38,10 @@ export class BazaarGeneratedDocumentProvider implements vscode.TextDocumentConte
     return this.documents.get(uri.toString())?.content ?? '';
   }
 
+  deleteUri(uri: vscode.Uri): void {
+    this.documents.delete(uri.toString());
+  }
+
   dispose(): void {
     this.onDidChangeEmitter.dispose();
     this.documents.clear();

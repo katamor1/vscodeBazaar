@@ -28,6 +28,18 @@ describe('resolveGraphRevisionMessage', () => {
     });
   });
 
+  it('rejects showDiff paths that are not in the selected revision changed paths', () => {
+    expect(resolveGraphRevisionMessage([revision], {
+      command: 'showDiff',
+      revisionId: 'rev-3',
+      path: '../outside.txt'
+    })).toEqual({
+      command: 'showDiff',
+      revision,
+      path: undefined
+    });
+  });
+
   it('allows graph nodes keyed by revno when revision id is unavailable', () => {
     const revisionIdOnly = { ...revision, revno: '4', revisionId: '' };
 
