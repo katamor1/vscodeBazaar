@@ -12,6 +12,7 @@ import {
   type BazaarExploreModel,
   type BazaarExploreSnapshot
 } from './exploreSnapshot';
+import { canLoadMoreRevisions } from './loadMoreSentinel';
 import { BazaarRevisionCache } from './revisionCache';
 import { createWebviewNonce, webviewContentSecurityPolicy } from './webviewSecurity';
 
@@ -224,7 +225,7 @@ export class BazaarExploreView implements vscode.WebviewViewProvider, vscode.Dis
   private render(): void {
     const model = createBazaarExploreModel(this.snapshot);
     const loadMore = {
-      canLoadMore: this.snapshot.revisions.length >= (this.currentHistoryLimit || maxExploreRevisions),
+      canLoadMore: canLoadMoreRevisions(model.revisions),
       loading: this.historyLoading
     };
     if (this.view) {

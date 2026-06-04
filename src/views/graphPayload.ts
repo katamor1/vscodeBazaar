@@ -1,5 +1,6 @@
 import { revisionGraphId } from '../bazaar/revisionSpec';
 import type { BazaarRevision, RevisionGraph } from '../bazaar/types';
+import { canLoadMoreRevisions } from './loadMoreSentinel';
 import { formatRevisionTimestamp } from './revisionTime';
 import { renderRevisionGraphSvg } from './revisionGraphRenderer';
 
@@ -52,7 +53,7 @@ export function createGraphPayload(graph: RevisionGraph, revisions: BazaarRevisi
     graph,
     revisions: renderedRevisions,
     limit: options.limit,
-    canLoadMore: revisions.length >= options.limit,
+    canLoadMore: canLoadMoreRevisions(renderedRevisions),
     loading: options.loading,
     graphHtml: renderRevisionGraphSvg(graph, renderedRevisions)
   };

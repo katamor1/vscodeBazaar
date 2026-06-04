@@ -1,5 +1,6 @@
 import { revisionGraphId } from '../bazaar/revisionSpec';
 import type { BazaarRevision } from '../bazaar/types';
+import { canLoadMoreRevisions } from './loadMoreSentinel';
 import { formatRevisionTimestamp } from './revisionTime';
 
 export interface HistoryEditorRevision {
@@ -35,29 +36,31 @@ export function createHistoryEditorPayload(
   revisions: readonly BazaarRevision[],
   options: HistoryEditorPayloadOptions
 ): HistoryEditorPayload {
+  const renderedRevisions = revisions.flatMap((revision) => {
+    const graphId = revisionGraphId(revision);
+    return graphId
+      ? [{
+          graphId,
+          revno: revision.revno,
+          revisionId: revision.revisionId,
+          committer: revision.committer,
+          branchNick: revision.branchNick,
+          timestamp: revision.timestamp,
+          displayTimestamp: formatRevisionTimestamp(revision.timestamp),
+          message: revision.message,
+          summary: firstLine(revision.message),
+          tags: revision.tags,
+          parentIds: revision.parentIds,
+          changedPaths: revision.changedPaths ?? []
+        }]
+      : [];
+  });
+
   return {
-    revisions: revisions.flatMap((revision) => {
-      const graphId = revisionGraphId(revision);
-      return graphId
-        ? [{
-            graphId,
-            revno: revision.revno,
-            revisionId: revision.revisionId,
-            committer: revision.committer,
-            branchNick: revision.branchNick,
-            timestamp: revision.timestamp,
-            displayTimestamp: formatRevisionTimestamp(revision.timestamp),
-            message: revision.message,
-            summary: firstLine(revision.message),
-            tags: revision.tags,
-            parentIds: revision.parentIds,
-            changedPaths: revision.changedPaths ?? []
-          }]
-        : [];
-    }),
+    revisions: renderedRevisions,
     limit: options.limit,
     pathFilter: options.pathFilter,
-    canLoadMore: revisions.length >= options.limit,
+    canLoadMore: canLoadMoreRevisions(renderedRevisions),
     loading: options.loading
   };
 }

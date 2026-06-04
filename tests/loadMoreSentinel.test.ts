@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  canLoadMoreRevisions,
   createLoadMoreSentinel,
   shouldRequestLoadMoreFromSentinel
 } from '../src/views/loadMoreSentinel';
@@ -58,5 +59,13 @@ describe('shouldRequestLoadMoreFromSentinel', () => {
       canLoadMore: false,
       loading: false
     })).toBe(false);
+  });
+});
+
+describe('canLoadMoreRevisions', () => {
+  it('keeps loading available until revision 1 is visible at the end', () => {
+    expect(canLoadMoreRevisions([{ revno: '2' }])).toBe(true);
+    expect(canLoadMoreRevisions([{ revno: '2' }, { revno: ' 1 ' }])).toBe(false);
+    expect(canLoadMoreRevisions([])).toBe(false);
   });
 });

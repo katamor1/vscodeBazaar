@@ -15,6 +15,17 @@ const revision: BazaarRevision = {
   changedPaths: ['src/app.ts']
 };
 
+const initialRevision: BazaarRevision = {
+  ...revision,
+  revno: '1',
+  revisionId: 'rev-1',
+  parentIds: [],
+  tags: [],
+  timestamp: 'Fri 2026-05-15 00:01:00 +0900',
+  message: 'initial',
+  changedPaths: []
+};
+
 describe('createHistoryEditorPayload', () => {
   it('creates a list-detail payload with display timestamps and load-more state', () => {
     const payload = createHistoryEditorPayload([revision], {
@@ -38,9 +49,9 @@ describe('createHistoryEditorPayload', () => {
     });
   });
 
-  it('does not advertise load-more when fewer revisions than the current limit are loaded', () => {
-    const payload = createHistoryEditorPayload([revision], {
-      limit: 2,
+  it('does not advertise load-more when revision 1 is visible at the end', () => {
+    const payload = createHistoryEditorPayload([revision, initialRevision], {
+      limit: 1,
       loading: false
     });
 
